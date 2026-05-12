@@ -288,6 +288,55 @@ test('AUTO-INSTALL: dashboard.js usa polling adaptativo (1s durante download)', 
     assert.match(src, /status\s*===\s*['"]downloading['"]\s*\)\s*\?\s*1000\s*:\s*5000/);
 });
 
+// ── Badge persistente no header (v3.9.0+) ────────────────────────────────────
+// O usuário precisa de feedback visual do auto-updater 100% do tempo, não só
+// quando há update disponível. Substituímos a span estática `version-badge`
+// por um botão #updateBadge com 7 estados que refletem o auto-updater ao vivo.
+test('UPDATE-BADGE: index.html tem #updateBadge interativo no lugar da version-badge estática', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+    assert.match(src, /id="updateBadge"/);
+    assert.match(src, /id="updateBadgeLabel"/);
+    assert.match(src, /onclick="onUpdateBadgeClick\(\)"/);
+});
+
+test('UPDATE-BADGE: dashboard.js implementa renderUpdateBadge com os 7 estados', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'dashboard.js'), 'utf8');
+    assert.match(src, /function renderUpdateBadge/);
+    // pollUpdateStatus precisa chamar renderUpdateBadge a cada poll (realtime)
+    const pollFn = src.match(/async function pollUpdateStatus\(\)[\s\S]*?^}/m);
+    assert.ok(pollFn);
+    assert.match(pollFn[0], /renderUpdateBadge\(data\)/);
+    // Os 7 estados devem aparecer
+    for (const cls of ['state-idle', 'state-checking', 'state-available',
+                       'state-downloading', 'state-ready', 'state-error', 'state-skipped']) {
+        assert.match(src, new RegExp(cls), `classe ${cls} ausente no render`);
+    }
+});
+
+test('UPDATE-BADGE: click em estado available/ready/downloading abre o modal', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'dashboard.js'), 'utf8');
+    const fn = src.match(/async function onUpdateBadgeClick[\s\S]*?(?=\nasync function|\nfunction\s|\n\/\/\s|$)/);
+    assert.ok(fn, 'onUpdateBadgeClick precisa ser localizável');
+    // Estados com modal direto
+    assert.match(fn[0], /['"]available['"]/);
+    assert.match(fn[0], /['"]downloading['"]/);
+    assert.match(fn[0], /['"]ready['"]/);
+    assert.match(fn[0], /renderUpdateModal/);
+    // Em idle/error, dispara /api/update/check
+    assert.match(fn[0], /\/api\/update\/check/);
+});
+
+test('UPDATE-BADGE: CSS define todos os estados do badge', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'dashboard.css'), 'utf8');
+    assert.match(src, /\.update-badge\s*\{/);
+    for (const cls of ['state-idle', 'state-checking', 'state-available',
+                       'state-downloading', 'state-ready', 'state-error', 'state-skipped']) {
+        assert.match(src, new RegExp(`\\.update-badge\\.${cls}`), `CSS .${cls} ausente`);
+    }
+    // Estado downloading deve ter barra de progresso interna
+    assert.match(src, /--update-progress/);
+});
+
 // ── Tray nativo (v3.9.0+) ────────────────────────────────────────────────────
 // Em v3.8.x tentamos um popup HTML para realtime no tray. Posicionamento e
 // flicker eram impossíveis de domar consistentemente no Windows (mesmo com

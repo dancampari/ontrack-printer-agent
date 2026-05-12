@@ -201,6 +201,136 @@ body {
     font-weight: 500;
 }
 
+/* ── Update Badge (header) — indicador persistente do auto-updater ──
+   Estados:
+     state-idle       → versão atual, neutro, clicar dispara checagem
+     state-checking   → spinner, neutro
+     state-available  → laranja pulsando, clicar abre modal
+     state-downloading→ azul com barra de progresso interna
+     state-ready      → verde, clicar instala
+     state-error      → vermelho sutil, clicar tenta de novo
+     state-skipped    → cinza, mostra "ignorada"
+*/
+.update-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 2px 8px;
+    margin-left: 6px;
+    border-radius: calc(var(--radius) - 2px);
+    border: 1px solid var(--border);
+    background: var(--muted);
+    color: var(--muted-foreground);
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    position: relative;
+    overflow: hidden;
+}
+
+.update-badge:hover {
+    background: color-mix(in hsl, var(--muted) 60%, var(--foreground) 10%);
+}
+
+.update-badge-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: 0.5;
+    flex-shrink: 0;
+}
+
+.update-badge.state-idle .update-badge-dot {
+    background: var(--success);
+    opacity: 0.7;
+}
+
+.update-badge.state-checking {
+    color: var(--muted-foreground);
+}
+.update-badge.state-checking .update-badge-dot {
+    width: 10px;
+    height: 10px;
+    border: 1.5px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+    background: transparent;
+    opacity: 1;
+    animation: update-badge-spin 0.8s linear infinite;
+}
+@keyframes update-badge-spin {
+    to { transform: rotate(360deg); }
+}
+
+.update-badge.state-available {
+    color: var(--warning);
+    background: var(--warning-bg);
+    border-color: color-mix(in hsl, var(--warning) 35%, transparent);
+    animation: update-badge-pulse 2s ease-in-out infinite;
+}
+.update-badge.state-available .update-badge-dot {
+    background: var(--warning);
+    opacity: 1;
+}
+@keyframes update-badge-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 color-mix(in hsl, var(--warning) 40%, transparent); }
+    50%      { box-shadow: 0 0 0 4px color-mix(in hsl, var(--warning) 0%, transparent); }
+}
+
+.update-badge.state-downloading {
+    color: var(--foreground);
+    background: var(--muted);
+    border-color: var(--border);
+}
+.update-badge.state-downloading .update-badge-dot {
+    background: var(--primary, #2563eb);
+    opacity: 1;
+}
+/* Barra de progresso interna, preenche da esquerda pra direita */
+.update-badge.state-downloading::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: color-mix(in hsl, var(--primary, #2563eb) 18%, transparent);
+    width: var(--update-progress, 0%);
+    transition: width 0.4s ease;
+    z-index: 0;
+}
+.update-badge.state-downloading > * {
+    position: relative;
+    z-index: 1;
+}
+
+.update-badge.state-ready {
+    color: var(--success);
+    background: var(--success-bg);
+    border-color: color-mix(in hsl, var(--success) 35%, transparent);
+}
+.update-badge.state-ready .update-badge-dot {
+    background: var(--success);
+    opacity: 1;
+}
+
+.update-badge.state-error {
+    color: var(--error);
+    background: var(--error-bg);
+    border-color: color-mix(in hsl, var(--error) 35%, transparent);
+}
+.update-badge.state-error .update-badge-dot {
+    background: var(--error);
+    opacity: 1;
+}
+
+.update-badge.state-skipped {
+    color: var(--muted-foreground);
+    background: var(--muted);
+    opacity: 0.75;
+}
+
 .subtitle {
     font-size: 12px;
     color: var(--muted-foreground);

@@ -1050,9 +1050,107 @@ async function pollUpdateStatus() {
         if (!res.ok) return;
         const data = await res.json();
         lastUpdateState = data;
+        renderUpdateBadge(data);
         maybeShowUpdateModal(data);
     } catch (e) {
         // silencioso — agent pode estar reiniciando
+    }
+}
+
+// Badge persistente no header — reflete o estado do auto-updater 100% do tempo.
+// Independente do modal: aparece mesmo quando não há update (mostra "atualizado").
+function renderUpdateBadge(state) {
+    const badge = document.getElementById('updateBadge');
+    const label = document.getElementById('updateBadgeLabel');
+    if (!badge || !label) return;
+
+    const status = (state && state.status) || 'idle';
+    const v = state && state.version;
+    const cur = (state && state.currentVersion) || '—';
+    const hasNew = v && cur && v !== cur;
+    const lastChecked = state && state.lastCheckedAt;
+
+    // Reset classes de estado
+    badge.classList.remove(
+        'state-idle', 'state-checking', 'state-available',
+        'state-downloading', 'state-ready', 'state-error', 'state-skipped'
+    );
+    badge.style.removeProperty('--update-progress');
+
+    let cls = 'state-idle';
+    let text = `v${cur}`;
+    let title = `Você está usando a versão ${cur}. Clique para verificar atualizações.`;
+
+    if (status === 'checking') {
+        cls = 'state-checking';
+        text = 'verificando…';
+        title = 'Verificando atualizações no GitHub Releases…';
+    } else if (status === 'available' && hasNew) {
+        cls = 'state-available';
+        text = `Nova versão ${v} disponível`;
+        title = `Nova versão ${v} disponível (atual: ${cur}). Clique para ver detalhes.`;
+    } else if (status === 'downloading' && v) {
+        cls = 'state-downloading';
+        const pct = Math.max(0, Math.min(100, state.progress || 0));
+        text = `Baixando ${v}… ${pct}%`;
+        title = `Baixando atualização ${v} (${pct}%). Clique para ver progresso.`;
+        badge.style.setProperty('--update-progress', pct + '%');
+    } else if (status === 'ready' && v) {
+        cls = 'state-ready';
+        text = `${v} pronta para instalar`;
+        title = `Versão ${v} baixada. Clique para reiniciar e instalar agora.`;
+    } else if (status === 'error') {
+        cls = 'state-error';
+        text = `v${cur} · falha ao verificar`;
+        title = (state && state.error)
+            ? `Falha ao verificar atualizações: ${state.error}. Clique para tentar de novo.`
+            : 'Falha ao verificar atualizações. Clique para tentar de novo.';
+    } else if (status === 'skipped' && v) {
+        cls = 'state-skipped';
+        text = `v${cur} · ${v} ignorada`;
+        title = `Você optou por não ser avisado da versão ${v}. Clique para verificar atualizações.`;
+    } else {
+        // idle / up-to-date
+        cls = 'state-idle';
+        text = `v${cur} · atualizado`;
+        const when = lastChecked ? formatRelativeTime(lastChecked) : 'ainda nesta sessão';
+        title = `Versão ${cur} (mais recente). Última verificação: ${when}. Clique para checar agora.`;
+    }
+
+    badge.classList.add(cls);
+    label.textContent = text;
+    badge.setAttribute('title', title);
+}
+
+// Click no badge — comportamento depende do estado atual.
+async function onUpdateBadgeClick() {
+    const state = lastUpdateState || {};
+    const status = state.status;
+
+    // Estados com modal ativo: abre o modal direto (download/ready/available)
+    if (status === 'available' || status === 'downloading' || status === 'ready') {
+        renderUpdateModal(state);
+        const modal = document.getElementById('updateModal');
+        if (modal) modal.style.display = 'flex';
+        return;
+    }
+
+    // Demais estados: dispara checagem manual
+    try {
+        // Otimismo visual: mostra checking imediatamente
+        renderUpdateBadge({ ...state, status: 'checking' });
+        const res = await fetch('/api/update/check', { method: 'POST' });
+        const data = await res.json();
+        if (!data.ok) {
+            showToast('Verificação falhou', data.error || 'Não foi possível consultar atualizações.', 'error');
+        } else if (!data.hasUpdate) {
+            showToast('Tudo certo', 'Você já está na versão mais recente.', 'success');
+        }
+        // O polling natural vai pegar o novo estado em até 5s; força um refresh em 400ms
+        setTimeout(pollUpdateStatus, 400);
+    } catch (e) {
+        showToast('Erro', 'Falha na comunicação com o agent.', 'error');
+        pollUpdateStatus();
     }
 }
 

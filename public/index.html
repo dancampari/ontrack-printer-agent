@@ -58,7 +58,13 @@
                 <div class="logo">
                     <img src="icon.png" alt="Cheflabel Agent" style="width: 32px; height: 32px; border-radius: 6px;">
                     <div>
-                        <h1>OnTrack Agent <span class="version-badge">v3.9.0</span></h1>
+                        <h1>OnTrack Agent
+                            <button type="button" id="updateBadge" class="update-badge state-idle"
+                                onclick="onUpdateBadgeClick()" title="Verificar atualizações">
+                                <span class="update-badge-dot"></span>
+                                <span id="updateBadgeLabel">v3.9.0</span>
+                            </button>
+                        </h1>
                         <p class="subtitle">Agente de Impressão</p>
                     </div>
                 </div>
