@@ -9,6 +9,9 @@ let lastDiagTime = 0;
 let isLogAutoScroll = true;
 let lastTriggerLogTime = ''; // Controle para não atualizar repetidamente pelo mesmo log
 
+// Estado do auto-update (alimentado por pollUpdateStatus a cada 5s)
+let lastUpdateState = null;
+
 // ==================================================================================
 // TOAST NOTIFICATIONS
 // ==================================================================================
@@ -1018,3 +1021,149 @@ async function handleLogout() {
         showToast('Erro', 'Falha na comunicação com o servidor', 'error');
     }
 }
+
+// ==================================================================================
+// AUTO-UPDATE BANNER
+// O usuário escolhe quando baixar, quando instalar, ou pular a versão.
+// Banner consulta /api/update a cada 5s e renderiza o estado atual.
+// ==================================================================================
+
+async function pollUpdateStatus() {
+    try {
+        const res = await fetch('/api/update');
+        if (!res.ok) return;
+        const data = await res.json();
+        lastUpdateState = data;
+        renderUpdateBanner(data);
+    } catch (e) {
+        // silencioso — agent pode estar reiniciando
+    }
+}
+
+function renderUpdateBanner(state) {
+    const banner = document.getElementById('updateBanner');
+    if (!banner) return;
+
+    const status = state && state.status;
+    const hasNewVersion = state && state.version && state.version !== state.currentVersion;
+
+    // Esconde banner quando não há nada a mostrar
+    if (!status || status === 'idle' || status === 'skipped' || status === 'checking' || !hasNewVersion) {
+        banner.style.display = 'none';
+        return;
+    }
+
+    banner.style.display = 'flex';
+    banner.classList.remove('ready', 'downloading', 'error');
+
+    const titleEl = document.getElementById('updateBannerTitle');
+    const subtitleEl = document.getElementById('updateBannerSubtitle');
+    const iconEl = document.getElementById('updateBannerIcon').querySelector('.material-symbols-outlined');
+    const changelogEl = document.getElementById('updateBannerChangelog');
+    const notesEl = document.getElementById('updateBannerNotes');
+    const progressEl = document.getElementById('updateBannerProgress');
+    const progressFillEl = document.getElementById('updateBannerProgressFill');
+    const progressLabelEl = document.getElementById('updateBannerProgressLabel');
+    const actionsEl = document.getElementById('updateBannerActions');
+
+    const v = state.version;
+    const cur = state.currentVersion || '';
+
+    // Changelog (release notes do GitHub) — só mostra se tem conteúdo
+    if (state.releaseNotes && String(state.releaseNotes).trim()) {
+        changelogEl.style.display = '';
+        // Notas podem vir em HTML ou markdown — exibe como texto pré-formatado (seguro)
+        notesEl.textContent = stripHtml(String(state.releaseNotes));
+    } else {
+        changelogEl.style.display = 'none';
+    }
+
+    if (status === 'available') {
+        iconEl.textContent = 'system_update';
+        titleEl.textContent = `Nova versão ${v} disponível`;
+        subtitleEl.textContent = `Você está usando ${cur}. Esta atualização traz melhorias e correções.`;
+        progressEl.style.display = 'none';
+        actionsEl.innerHTML = `
+            <button class="ub-btn ub-btn-primary" onclick="updateAction('download')">
+                <span class="material-symbols-outlined">download</span>Baixar agora
+            </button>
+            <button class="ub-btn ub-btn-ghost" onclick="updateAction('skip','${escapeAttr(v)}')">
+                Pular esta versão
+            </button>`;
+    } else if (status === 'downloading') {
+        banner.classList.add('downloading');
+        iconEl.textContent = 'downloading';
+        titleEl.textContent = `Baixando ${v}...`;
+        subtitleEl.textContent = `Você pode continuar usando o agent normalmente.`;
+        progressEl.style.display = '';
+        const pct = state.progress || 0;
+        progressFillEl.style.width = pct + '%';
+        progressLabelEl.textContent = pct + '%';
+        actionsEl.innerHTML = `<button class="ub-btn ub-btn-ghost" disabled>Aguarde...</button>`;
+    } else if (status === 'ready') {
+        banner.classList.add('ready');
+        iconEl.textContent = 'task_alt';
+        titleEl.textContent = `Versão ${v} pronta para instalar`;
+        subtitleEl.textContent = `Instalar agora reinicia o agent (impressões em andamento são preservadas na fila).`;
+        progressEl.style.display = 'none';
+        actionsEl.innerHTML = `
+            <button class="ub-btn ub-btn-success" onclick="updateAction('install')">
+                <span class="material-symbols-outlined">restart_alt</span>Instalar e reiniciar
+            </button>
+            <button class="ub-btn ub-btn-ghost" onclick="updateAction('skip','${escapeAttr(v)}')">
+                Pular esta versão
+            </button>`;
+    } else if (status === 'error') {
+        banner.classList.add('error');
+        iconEl.textContent = 'error';
+        titleEl.textContent = 'Falha ao verificar atualização';
+        subtitleEl.textContent = state.error || 'Verifique sua conexão e tente novamente.';
+        progressEl.style.display = 'none';
+        actionsEl.innerHTML = `
+            <button class="ub-btn ub-btn-primary" onclick="updateAction('check')">
+                <span class="material-symbols-outlined">refresh</span>Tentar novamente
+            </button>`;
+    } else {
+        banner.style.display = 'none';
+    }
+}
+
+async function updateAction(action, version) {
+    const endpoint = '/api/update/' + action;
+    const body = action === 'skip' ? JSON.stringify({ version }) : undefined;
+    try {
+        const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: body ? { 'Content-Type': 'application/json' } : {},
+            body
+        });
+        const data = await res.json();
+        if (data.ok) {
+            if (action === 'download') showToast('Download iniciado', 'Acompanhe o progresso no banner.', 'info');
+            if (action === 'install') showToast('Reiniciando', 'O agent será atualizado agora...', 'success');
+            if (action === 'skip') showToast('Versão pulada', 'Você não será notificado sobre esta versão novamente.', 'info');
+            if (action === 'check') showToast('Verificando', 'Consultando GitHub Releases...', 'info');
+            // força refresh imediato do estado
+            setTimeout(pollUpdateStatus, 400);
+        } else {
+            showToast('Erro', data.error || `Falha na ação: ${action}`, 'error');
+        }
+    } catch (e) {
+        showToast('Erro', 'Falha na comunicação com o agent.', 'error');
+    }
+}
+
+function stripHtml(s) {
+    const tmp = document.createElement('div');
+    tmp.innerHTML = s;
+    return tmp.textContent || tmp.innerText || '';
+}
+function escapeAttr(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+
+// Inicia polling do update assim que a página estiver pronta
+document.addEventListener('DOMContentLoaded', () => {
+    pollUpdateStatus();
+    setInterval(pollUpdateStatus, 5000);
+});

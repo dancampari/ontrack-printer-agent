@@ -32,6 +32,25 @@ const jobEmitter = new EventEmitter();
 jobEmitter.setMaxListeners(100);
 global.jobEmitter = jobEmitter;
 
+// Bridge IPC para ações do autoUpdater. main.js detém o autoUpdater (Electron API).
+// Os endpoints REST do controller (POST /api/update/*) precisam acionar essas
+// ações sem ter acesso direto ao Electron — usam essa ponte.
+const updateActionWaiters = new Map(); // requestId → { resolve, reject, timer }
+
+function requestUpdateAction(action, params = {}, timeoutMs = 15_000) {
+    return new Promise((resolve, reject) => {
+        if (!ipc.send) return reject(new Error('IPC não disponível (modo standalone)'));
+        const requestId = `upd-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const timer = setTimeout(() => {
+            updateActionWaiters.delete(requestId);
+            reject(new Error(`Timeout aguardando ação de update: ${action}`));
+        }, timeoutMs);
+        updateActionWaiters.set(requestId, { resolve, reject, timer });
+        ipc.send({ type: 'UPDATE_ACTION', requestId, action, ...params });
+    });
+}
+global.requestUpdateAction = requestUpdateAction;
+
 // Mapa de promises pendentes para geração de PDF via IPC
 const pendingPdfRequests = new Map();
 
@@ -86,7 +105,7 @@ global.requestHtmlPrint = requestHtmlPrint;
 
 async function bootstrap() {
     logger.init();
-    logger.info('MAIN', '=== ONTRACK AGENT v3.7.0 (Auto-update) ===');
+    logger.info('MAIN', '=== ONTRACK AGENT v3.7.1 (UX update controle manual) ===');
 
     // 1. Inicializa Autenticação (Tenta carregar sessão do disco)
     const isAuthenticated = await auth.init();
@@ -301,6 +320,18 @@ process.on('message', async (msg) => {
     // poder consultar via /api/status (sem precisar de IPC adicional).
     if (msg.type === 'UPDATE_STATUS') {
         state.updateStatus = msg.payload || null;
+        return;
+    }
+    // Resposta de uma ação solicitada por endpoints REST (download/install/skip/check)
+    if (msg.type === 'UPDATE_ACTION_RESULT') {
+        const waiter = updateActionWaiters.get(msg.requestId);
+        if (waiter) {
+            clearTimeout(waiter.timer);
+            updateActionWaiters.delete(msg.requestId);
+            // msg pode ter { ok, error, state, ... } — passa tudo
+            const { type, requestId, ...result } = msg;
+            waiter.resolve(result);
+        }
         return;
     }
     // Resultado da impressão direta de etiqueta de teste (handler no main.js)

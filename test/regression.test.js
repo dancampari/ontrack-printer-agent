@@ -142,14 +142,108 @@ test('REGRESSÃO: fixQueue tem try/catch ao redor de operações de spooler', ()
     assert.ok(tryBlocks >= 3, `fixQueue deve ter ≥3 blocos try (achei ${tryBlocks})`);
 });
 
-test('REGRESSÃO: package.json está em 3.7.0', () => {
+test('REGRESSÃO: package.json está em 3.7.1', () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
-    assert.equal(pkg.version, '3.7.0');
+    assert.equal(pkg.version, '3.7.1');
 });
 
-test('REGRESSÃO: controllers.js reporta version 3.7.0 em /api/health', () => {
+test('REGRESSÃO: controllers.js reporta version 3.7.1 em /api/health', () => {
     const src = root('api/controllers.js');
-    assert.match(src, /version:\s*['"]3\.7\.0['"]/);
+    assert.match(src, /version:\s*['"]3\.7\.1['"]/);
+});
+
+// ── UX profissional de update (v3.7.1+) ──────────────────────────────────────
+test('UPDATE-UX: main.js usa autoDownload=false e autoInstallOnAppQuit=false (controle manual)', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+    assert.match(src, /autoUpdater\.autoDownload\s*=\s*false/);
+    assert.match(src, /autoUpdater\.autoInstallOnAppQuit\s*=\s*false/);
+});
+
+test('UPDATE-UX: main.js persiste skipped versions em update-prefs.json', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+    assert.match(src, /UPDATE_PREFS_FILE/);
+    assert.match(src, /skippedVersions/);
+    assert.match(src, /writeUpdatePrefs/);
+    assert.match(src, /readUpdatePrefs/);
+});
+
+test('UPDATE-UX: main.js expõe ações actionCheckForUpdates/Download/InstallNow/SkipVersion', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+    assert.match(src, /function\s+actionCheckForUpdates/);
+    assert.match(src, /function\s+actionStartDownload/);
+    assert.match(src, /function\s+actionInstallNow/);
+    assert.match(src, /function\s+actionSkipVersion/);
+});
+
+test('UPDATE-UX: main.js trata IPC UPDATE_ACTION com requestId/respond', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+    assert.match(src, /msg\.type\s*===\s*['"]UPDATE_ACTION['"]/);
+    assert.match(src, /UPDATE_ACTION_RESULT/);
+});
+
+test('UPDATE-UX: main.js NÃO baixa automaticamente em update-available', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+    const listener = src.match(/autoUpdater\.on\(['"]update-available['"][\s\S]*?\}\);/);
+    assert.ok(listener);
+    // O status deve ir para 'available' (esperando ação), NÃO direto para 'downloading'
+    assert.match(listener[0], /status\s*=\s*['"]available['"]/);
+    assert.doesNotMatch(listener[0], /autoUpdater\.downloadUpdate\(\)/);
+});
+
+test('UPDATE-UX: main.js respeita skippedVersions em update-available', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+    const listener = src.match(/autoUpdater\.on\(['"]update-available['"][\s\S]*?\}\);/);
+    assert.match(listener[0], /skippedVersions\.includes/);
+});
+
+test('UPDATE-UX: agent.js expõe global.requestUpdateAction (ponte para REST)', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'agent.js'), 'utf8');
+    assert.match(src, /global\.requestUpdateAction\s*=/);
+    assert.match(src, /updateActionWaiters/);
+    assert.match(src, /UPDATE_ACTION_RESULT/);
+});
+
+test('UPDATE-UX: controllers.js tem updateStatus/Check/Download/Install/Skip', () => {
+    const src = root('api/controllers.js');
+    assert.match(src, /updateStatus:\s*async/);
+    assert.match(src, /updateCheck:\s*async/);
+    assert.match(src, /updateDownload:\s*async/);
+    assert.match(src, /updateInstall:\s*async/);
+    assert.match(src, /updateSkip:\s*async/);
+});
+
+test('UPDATE-UX: server.js registra rotas REST de update', () => {
+    const src = root('api/server.js');
+    assert.match(src, /app\.get\(['"]\/api\/update['"],\s*Controllers\.updateStatus\)/);
+    assert.match(src, /app\.post\(['"]\/api\/update\/check['"],\s*Controllers\.updateCheck\)/);
+    assert.match(src, /app\.post\(['"]\/api\/update\/download['"],\s*Controllers\.updateDownload\)/);
+    assert.match(src, /app\.post\(['"]\/api\/update\/install['"],\s*Controllers\.updateInstall\)/);
+    assert.match(src, /app\.post\(['"]\/api\/update\/skip['"],\s*Controllers\.updateSkip\)/);
+});
+
+test('UPDATE-UX: public/index.html tem updateBanner com 4 estados (available/downloading/ready/error)', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
+    assert.match(src, /id="updateBanner"/);
+    assert.match(src, /id="updateBannerActions"/);
+    assert.match(src, /\.update-banner\.ready/);
+    assert.match(src, /\.update-banner\.downloading/);
+    assert.match(src, /\.update-banner\.error/);
+});
+
+test('UPDATE-UX: dashboard.js faz polling de /api/update e renderiza banner', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'dashboard.js'), 'utf8');
+    assert.match(src, /pollUpdateStatus/);
+    assert.match(src, /renderUpdateBanner/);
+    assert.match(src, /function updateAction/);
+    assert.match(src, /\/api\/update\//);
+});
+
+test('UPDATE-UX: tray menu mostra opções baseadas em status (available/downloading/ready)', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+    assert.match(src, /Nova versão.*disponível/);
+    assert.match(src, /Baixar agora/);
+    assert.match(src, /Pular esta versão/);
+    assert.match(src, /Instalar e reiniciar/);
 });
 
 // ── Auto-update (v3.7.0+) ────────────────────────────────────────────────────

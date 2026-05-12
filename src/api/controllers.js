@@ -132,7 +132,7 @@ const Controllers = {
     health: (req, res) => {
         res.json({
             status: 'ok',
-            version: '3.7.0',
+            version: '3.7.1',
             authenticated: state.isAuthenticated(),
             printerConfigured: !!(state.currentConfig.printerName || state.currentConfig.printerIdentifier),
             defaultPrinter: state.currentConfig.printerName || state.currentConfig.printerIdentifier || null,
@@ -258,6 +258,77 @@ const Controllers = {
             res.json({ ok: true, cleanedCount: count });
         } catch (e) {
             logger.error('DOCTOR', 'Falha ao corrigir fila', e.message);
+            res.status(500).json({ ok: false, error: e.message });
+        }
+    },
+
+    // ── Auto-update endpoints ────────────────────────────────────────────
+    // GET /api/update — retorna estado atual completo (status, info, progresso,
+    // changelog, skipped, currentVersion). Banner do UI faz polling disto.
+    updateStatus: async (req, res) => {
+        try {
+            if (typeof global.requestUpdateAction !== 'function') {
+                return res.json({ status: 'idle', currentVersion: state.updateStatus?.currentVersion || null });
+            }
+            const r = await global.requestUpdateAction('status', {}, 5_000);
+            if (r.ok && r.state) return res.json(r.state);
+            return res.json(state.updateStatus || { status: 'idle' });
+        } catch (e) {
+            res.json(state.updateStatus || { status: 'idle' });
+        }
+    },
+
+    // POST /api/update/check — força checagem manual no GitHub Releases.
+    updateCheck: async (req, res) => {
+        try {
+            if (typeof global.requestUpdateAction !== 'function') {
+                return res.status(503).json({ ok: false, error: 'Agent não pronto.' });
+            }
+            const r = await global.requestUpdateAction('check', {}, 30_000);
+            res.json(r);
+        } catch (e) {
+            res.status(500).json({ ok: false, error: e.message });
+        }
+    },
+
+    // POST /api/update/download — usuário consentiu em baixar.
+    updateDownload: async (req, res) => {
+        try {
+            if (typeof global.requestUpdateAction !== 'function') {
+                return res.status(503).json({ ok: false, error: 'Agent não pronto.' });
+            }
+            // Não esperamos o download completo (pode demorar) — só confirmamos início.
+            const r = await global.requestUpdateAction('download', {}, 10_000);
+            res.json(r);
+        } catch (e) {
+            res.status(500).json({ ok: false, error: e.message });
+        }
+    },
+
+    // POST /api/update/install — usuário escolheu reiniciar agora.
+    updateInstall: async (req, res) => {
+        try {
+            if (typeof global.requestUpdateAction !== 'function') {
+                return res.status(503).json({ ok: false, error: 'Agent não pronto.' });
+            }
+            const r = await global.requestUpdateAction('install', {}, 5_000);
+            res.json(r);
+        } catch (e) {
+            res.status(500).json({ ok: false, error: e.message });
+        }
+    },
+
+    // POST /api/update/skip — usuário pulou a versão atual.
+    updateSkip: async (req, res) => {
+        try {
+            const version = (req.body && req.body.version) || null;
+            if (!version) return res.status(400).json({ ok: false, error: 'Body deve conter { version }.' });
+            if (typeof global.requestUpdateAction !== 'function') {
+                return res.status(503).json({ ok: false, error: 'Agent não pronto.' });
+            }
+            const r = await global.requestUpdateAction('skip', { version }, 5_000);
+            res.json(r);
+        } catch (e) {
             res.status(500).json({ ok: false, error: e.message });
         }
     },
@@ -429,7 +500,7 @@ p { margin: 2px 0; }
 <div class="line"></div>
 <p class="center">Assinatura: ___________________</p>
 <p class="center" style="margin-top:6px; font-size:10px;">Impresso em: ${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}</p>
-<p class="center" style="margin-top:4px; font-size:9px; color:#666;">OnTrack — Agente de Impressão v3.7.0</p>
+<p class="center" style="margin-top:4px; font-size:9px; color:#666;">OnTrack — Agente de Impressão v3.7.1</p>
 </body></html>`;
 
         const fs = require('fs');

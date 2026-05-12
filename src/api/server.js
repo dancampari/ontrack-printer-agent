@@ -8,7 +8,7 @@ const Controllers = require('./controllers');
 const logger = require('../utils/logger');
 const wsBroadcast = require('../core/wsBroadcast');
 
-const AGENT_VERSION = '3.7.0';
+const AGENT_VERSION = '3.7.1';
 
 class Server {
     start() {
@@ -48,6 +48,13 @@ class Server {
         app.get('/api/health', Controllers.health);
         app.post('/api/local-print', Controllers.localPrint);
         app.post('/api/local-print-batch', Controllers.localPrintBatch);
+
+        // Auto-update (controle manual: usuário decide quando baixar / instalar / pular)
+        app.get('/api/update', Controllers.updateStatus);
+        app.post('/api/update/check', Controllers.updateCheck);
+        app.post('/api/update/download', Controllers.updateDownload);
+        app.post('/api/update/install', Controllers.updateInstall);
+        app.post('/api/update/skip', Controllers.updateSkip);
 
         app.get('/api/status', Controllers.requireAuth, Controllers.getStatus);
         app.post('/config', Controllers.requireAuth, Controllers.saveConfig);

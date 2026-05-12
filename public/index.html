@@ -43,6 +43,97 @@
         .printer-icon .material-symbols-outlined {
             font-size: 24px;
         }
+
+        /* ── Update Banner ──────────────────────────────────────────────── */
+        .update-banner {
+            display: flex;
+            align-items: flex-start;
+            gap: 14px;
+            padding: 14px 18px;
+            margin: 12px 16px 0;
+            border-radius: 10px;
+            background: linear-gradient(135deg, rgba(59,130,246,0.10), rgba(37,99,235,0.06));
+            border: 1px solid rgba(59,130,246,0.35);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+            animation: ub-slide-in .25s ease-out;
+        }
+        .update-banner.ready {
+            background: linear-gradient(135deg, rgba(16,185,129,0.12), rgba(5,150,105,0.06));
+            border-color: rgba(16,185,129,0.45);
+        }
+        .update-banner.downloading {
+            background: linear-gradient(135deg, rgba(245,158,11,0.10), rgba(217,119,6,0.05));
+            border-color: rgba(245,158,11,0.40);
+        }
+        .update-banner.error {
+            background: linear-gradient(135deg, rgba(239,68,68,0.10), rgba(220,38,38,0.05));
+            border-color: rgba(239,68,68,0.40);
+        }
+        @keyframes ub-slide-in {
+            from { opacity: 0; transform: translateY(-6px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+        .update-banner-icon {
+            flex-shrink: 0;
+            width: 40px; height: 40px;
+            border-radius: 50%;
+            background: rgba(59,130,246,0.15);
+            display: flex; align-items: center; justify-content: center;
+            color: #2563eb;
+        }
+        .update-banner.ready .update-banner-icon { background: rgba(16,185,129,0.15); color: #059669; }
+        .update-banner.downloading .update-banner-icon { background: rgba(245,158,11,0.15); color: #d97706; }
+        .update-banner.error .update-banner-icon { background: rgba(239,68,68,0.15); color: #dc2626; }
+        .update-banner-icon .material-symbols-outlined { font-size: 22px; }
+        .update-banner-body { flex: 1; min-width: 0; }
+        .update-banner-title { font-weight: 600; font-size: 14px; margin-bottom: 2px; }
+        .update-banner-subtitle { font-size: 12px; color: var(--text-secondary, #6b7280); line-height: 1.4; }
+        .update-banner-changelog { margin-top: 8px; font-size: 12px; }
+        .update-banner-changelog summary { cursor: pointer; color: #2563eb; font-weight: 500; }
+        .update-banner-notes {
+            margin-top: 6px; padding: 8px 10px;
+            background: rgba(0,0,0,0.03);
+            border-radius: 6px;
+            font-size: 12px; line-height: 1.5;
+            max-height: 200px; overflow-y: auto;
+            white-space: pre-wrap; font-family: 'Inter', sans-serif;
+        }
+        .update-banner-progress {
+            display: flex; align-items: center; gap: 8px;
+            margin-top: 8px; font-size: 12px;
+        }
+        .update-banner-progress-bar {
+            flex: 1; height: 6px; background: rgba(0,0,0,0.08);
+            border-radius: 3px; overflow: hidden;
+        }
+        .update-banner-progress-bar > div {
+            height: 100%; background: #f59e0b;
+            transition: width 0.3s ease;
+        }
+        .update-banner-actions {
+            display: flex; flex-direction: column; gap: 6px;
+            flex-shrink: 0;
+        }
+        .ub-btn {
+            padding: 6px 12px; font-size: 12px; font-weight: 500;
+            border-radius: 6px; border: 1px solid transparent;
+            cursor: pointer; white-space: nowrap;
+            transition: all 0.15s ease;
+            display: inline-flex; align-items: center; gap: 4px;
+        }
+        .ub-btn-primary { background: #2563eb; color: white; }
+        .ub-btn-primary:hover { background: #1d4ed8; }
+        .ub-btn-success { background: #059669; color: white; }
+        .ub-btn-success:hover { background: #047857; }
+        .ub-btn-ghost { background: transparent; color: var(--text-secondary, #6b7280); border-color: rgba(0,0,0,0.12); }
+        .ub-btn-ghost:hover { background: rgba(0,0,0,0.04); }
+        .ub-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        .ub-btn .material-symbols-outlined { font-size: 14px; }
+
+        html.dark .update-banner-notes { background: rgba(255,255,255,0.04); }
+        html.dark .update-banner-progress-bar { background: rgba(255,255,255,0.08); }
+        html.dark .ub-btn-ghost { color: #9ca3af; border-color: rgba(255,255,255,0.12); }
+        html.dark .ub-btn-ghost:hover { background: rgba(255,255,255,0.05); }
     </style>
 </head>
 
@@ -51,13 +142,34 @@
     <div id="toastContainer" class="toast-container"></div>
 
     <div class="app-container">
+        <!-- Update Banner — exibido quando há nova versão / pronta para instalar -->
+        <div id="updateBanner" class="update-banner" style="display:none;">
+            <div class="update-banner-icon" id="updateBannerIcon">
+                <span class="material-symbols-outlined">system_update</span>
+            </div>
+            <div class="update-banner-body">
+                <div class="update-banner-title" id="updateBannerTitle">Nova versão disponível</div>
+                <div class="update-banner-subtitle" id="updateBannerSubtitle"></div>
+                <details class="update-banner-changelog" id="updateBannerChangelog" style="display:none;">
+                    <summary>Ver novidades</summary>
+                    <div id="updateBannerNotes" class="update-banner-notes"></div>
+                </details>
+                <div class="update-banner-progress" id="updateBannerProgress" style="display:none;">
+                    <div class="update-banner-progress-bar"><div id="updateBannerProgressFill" style="width:0%"></div></div>
+                    <span id="updateBannerProgressLabel">0%</span>
+                </div>
+            </div>
+            <div class="update-banner-actions" id="updateBannerActions">
+                <!-- Botões inseridos dinamicamente em renderUpdateBanner() -->
+            </div>
+        </div>
         <!-- Header -->
         <header class="app-header">
             <div class="header-left">
                 <div class="logo">
                     <img src="icon.png" alt="Cheflabel Agent" style="width: 32px; height: 32px; border-radius: 6px;">
                     <div>
-                        <h1>OnTrack Agent <span class="version-badge">v3.7.0</span></h1>
+                        <h1>OnTrack Agent <span class="version-badge">v3.7.1</span></h1>
                         <p class="subtitle">Agente de Impressão</p>
                     </div>
                 </div>

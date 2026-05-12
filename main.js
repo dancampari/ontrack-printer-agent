@@ -7,20 +7,51 @@ const { autoUpdater } = require('electron-updater');
 const { isValidPrinterName } = require('./src/utils/printerValidator');
 
 // ── Auto-update via GitHub Releases ──────────────────────────────────────────
-// Estratégia: checa apenas no boot (cadência mais leve para impressoras que
-// passam horas/dias ligadas). Sem code-signing, mas substituição local é
-// confiável porque o autoUpdater valida SHA-512 + size do latest.yml gerado
-// pelo electron-builder.
-autoUpdater.autoDownload = true;
-autoUpdater.autoInstallOnAppQuit = true;
-// Não impedir downgrade em casos extremos de rollback (release com bug grave)
+// Estratégia profissional, controle MANUAL:
+//  - autoDownload=false: detecta versão nova, NÃO baixa sem consentimento.
+//  - autoInstallOnAppQuit=false: NÃO aplica sozinho — usuário decide quando.
+//  - Skipped versions: persistidas em data/update-prefs.json. Versão pulada
+//    não dispara notificação na próxima checagem (mas se sair uma 3.8.0
+//    posterior, ela aparece normalmente).
+//  - Checa só no boot + via ação manual (botão na UI ou item do tray).
+autoUpdater.autoDownload = false;
+autoUpdater.autoInstallOnAppQuit = false;
 autoUpdater.allowDowngrade = false;
 
+// Persistência de preferências (skipped versions)
+const UPDATE_PREFS_FILE = path.join(app.getPath('userData'), 'update-prefs.json');
+
+function readUpdatePrefs() {
+    try {
+        if (fs.existsSync(UPDATE_PREFS_FILE)) {
+            const raw = fs.readFileSync(UPDATE_PREFS_FILE, 'utf8');
+            const parsed = JSON.parse(raw);
+            return {
+                skippedVersions: Array.isArray(parsed.skippedVersions) ? parsed.skippedVersions : [],
+            };
+        }
+    } catch (e) {
+        console.warn('[autoUpdater] falha ao ler update-prefs:', e.message);
+    }
+    return { skippedVersions: [] };
+}
+
+function writeUpdatePrefs(prefs) {
+    try {
+        fs.mkdirSync(path.dirname(UPDATE_PREFS_FILE), { recursive: true });
+        fs.writeFileSync(UPDATE_PREFS_FILE, JSON.stringify(prefs, null, 2), 'utf8');
+    } catch (e) {
+        console.warn('[autoUpdater] falha ao salvar update-prefs:', e.message);
+    }
+}
+
 let updateState = {
-    status: 'idle',        // idle | checking | downloading | ready | error
-    info: null,            // info recebida do GitHub Release
+    status: 'idle',        // idle | checking | available | downloading | ready | error | skipped
+    info: null,            // { version, releaseNotes, releaseName, releaseDate, files }
     error: null,
     downloadProgress: 0,   // 0–100
+    skippedVersions: readUpdatePrefs().skippedVersions,
+    currentVersion: app.getVersion(),
 };
 
 function pushUpdateStateToAgent() {
@@ -31,23 +62,85 @@ function pushUpdateStateToAgent() {
             payload: {
                 status: updateState.status,
                 version: updateState.info && updateState.info.version,
+                releaseNotes: updateState.info && (updateState.info.releaseNotes || ''),
+                releaseName: updateState.info && (updateState.info.releaseName || ''),
+                releaseDate: updateState.info && (updateState.info.releaseDate || null),
+                currentVersion: updateState.currentVersion,
                 error: updateState.error,
                 progress: updateState.downloadProgress,
+                skippedVersions: updateState.skippedVersions,
             },
         });
     } catch { /* ignore */ }
 }
 
-function applyUpdateAndQuit() {
-    try {
-        app.isQuitting = true;
-        if (agentProcess) {
-            try { agentProcess.kill(); } catch { /* ignore */ }
-        }
-        autoUpdater.quitAndInstall(false, true);
-    } catch (e) {
-        console.error('[autoUpdater] falha ao instalar update:', e);
+// ── Ações (chamadas via IPC do agent.js, originadas dos endpoints REST) ─────
+
+function actionCheckForUpdates() {
+    if (!app.isPackaged) return Promise.resolve({ ok: false, error: 'Não disponível em modo dev.' });
+    return autoUpdater.checkForUpdates()
+        .then((res) => ({ ok: true, hasUpdate: !!(res && res.updateInfo) }))
+        .catch((err) => ({ ok: false, error: err && err.message }));
+}
+
+function actionStartDownload() {
+    if (!app.isPackaged) return Promise.resolve({ ok: false, error: 'Não disponível em modo dev.' });
+    if (!updateState.info) return Promise.resolve({ ok: false, error: 'Nenhuma atualização disponível.' });
+    if (updateState.status === 'downloading') return Promise.resolve({ ok: false, error: 'Download já em andamento.' });
+    if (updateState.status === 'ready') return Promise.resolve({ ok: true, alreadyReady: true });
+
+    updateState.status = 'downloading';
+    updateState.downloadProgress = 0;
+    pushUpdateStateToAgent();
+    updateTrayMenu();
+
+    return autoUpdater.downloadUpdate()
+        .then(() => ({ ok: true }))
+        .catch((err) => {
+            updateState.status = 'error';
+            updateState.error = err && err.message;
+            pushUpdateStateToAgent();
+            updateTrayMenu();
+            return { ok: false, error: err && err.message };
+        });
+}
+
+function actionInstallNow() {
+    if (updateState.status !== 'ready') {
+        return { ok: false, error: 'Atualização ainda não foi baixada.' };
     }
+    setTimeout(() => {
+        try {
+            app.isQuitting = true;
+            if (agentProcess) {
+                try { agentProcess.kill(); } catch { /* ignore */ }
+            }
+            // (isSilent=false, isForceRunAfter=true) — abre instalador e reabre o app após.
+            autoUpdater.quitAndInstall(false, true);
+        } catch (e) {
+            console.error('[autoUpdater] falha ao instalar update:', e);
+        }
+    }, 500);
+    return { ok: true };
+}
+
+function actionSkipVersion(version) {
+    if (!version || typeof version !== 'string') return { ok: false, error: 'Versão inválida.' };
+    const prefs = readUpdatePrefs();
+    if (!prefs.skippedVersions.includes(version)) {
+        prefs.skippedVersions.push(version);
+        writeUpdatePrefs(prefs);
+    }
+    updateState.skippedVersions = prefs.skippedVersions;
+    // Se a versão pulada é a atualmente sinalizada, limpa o estado para tirar o banner
+    if (updateState.info && updateState.info.version === version) {
+        updateState.status = 'skipped';
+        updateState.info = null;
+        updateState.downloadProgress = 0;
+    }
+    pushUpdateStateToAgent();
+    updateTrayMenu();
+    return { ok: true, skippedVersions: prefs.skippedVersions };
 }
 
 let mainWindow;
@@ -116,16 +209,26 @@ if (!app.requestSingleInstanceLock()) {
 // ── Listeners do autoUpdater ────────────────────────────────────────────────
 autoUpdater.on('checking-for-update', () => {
     updateState.status = 'checking';
+    updateState.error = null;
     pushUpdateStateToAgent();
 });
 
 autoUpdater.on('update-available', (info) => {
-    updateState.status = 'downloading';
+    // Versão pulada anteriormente? Silencia (só registra no estado, sem alerta).
+    if (updateState.skippedVersions.includes(info.version)) {
+        console.log(`[autoUpdater] versão ${info.version} disponível mas foi pulada pelo usuário.`);
+        updateState.status = 'skipped';
+        updateState.info = info;
+        pushUpdateStateToAgent();
+        updateTrayMenu();
+        return;
+    }
+    updateState.status = 'available'; // NÃO baixa automaticamente — espera ação
     updateState.info = info;
-    console.log(`[autoUpdater] versão ${info.version} disponível — baixando...`);
+    console.log(`[autoUpdater] versão ${info.version} disponível — aguardando decisão do usuário.`);
     showNotification({
         title: 'Atualização disponível',
-        body: `Baixando OnTrack Agent ${info.version} em background.`,
+        body: `OnTrack Agent ${info.version} pronto para instalar. Abra o painel para escolher.`,
     });
     pushUpdateStateToAgent();
     updateTrayMenu();
@@ -133,6 +236,7 @@ autoUpdater.on('update-available', (info) => {
 
 autoUpdater.on('update-not-available', () => {
     updateState.status = 'idle';
+    updateState.info = null;
     pushUpdateStateToAgent();
     updateTrayMenu();
 });
@@ -140,16 +244,16 @@ autoUpdater.on('update-not-available', () => {
 autoUpdater.on('download-progress', (progress) => {
     updateState.downloadProgress = Math.round(progress.percent || 0);
     pushUpdateStateToAgent();
-    // não atualiza tray em cada % pra não floodar
 });
 
 autoUpdater.on('update-downloaded', (info) => {
     updateState.status = 'ready';
     updateState.info = info;
+    updateState.downloadProgress = 100;
     console.log(`[autoUpdater] versão ${info.version} pronta para aplicar.`);
     showNotification({
         title: 'Atualização pronta',
-        body: `OnTrack Agent ${info.version} será aplicada na próxima reinicialização.`,
+        body: `${info.version} baixada. Clique em "Instalar agora" no painel quando preferir.`,
     });
     pushUpdateStateToAgent();
     updateTrayMenu();
@@ -277,6 +381,40 @@ function startAgent() {
             updateTrayMenu();
         } else if (msg.type === 'NOTIFICATION') {
             showNotification(msg);
+        } else if (msg.type === 'UPDATE_ACTION') {
+            // Ação vinda dos endpoints REST do agent (POST /api/update/*).
+            // requestId permite ao agent.js correlacionar a resposta.
+            const { requestId, action, version } = msg;
+            const respond = (result) => {
+                try { agentProcess.send({ type: 'UPDATE_ACTION_RESULT', requestId, ...result }); } catch { /* ignore */ }
+            };
+            try {
+                if (action === 'check') {
+                    Promise.resolve(actionCheckForUpdates()).then(respond);
+                } else if (action === 'download') {
+                    Promise.resolve(actionStartDownload()).then(respond);
+                } else if (action === 'install') {
+                    respond(actionInstallNow());
+                } else if (action === 'skip') {
+                    respond(actionSkipVersion(version));
+                } else if (action === 'status') {
+                    respond({ ok: true, state: {
+                        status: updateState.status,
+                        version: updateState.info && updateState.info.version,
+                        releaseNotes: updateState.info && (updateState.info.releaseNotes || ''),
+                        releaseName: updateState.info && (updateState.info.releaseName || ''),
+                        releaseDate: updateState.info && (updateState.info.releaseDate || null),
+                        currentVersion: updateState.currentVersion,
+                        error: updateState.error,
+                        progress: updateState.downloadProgress,
+                        skippedVersions: updateState.skippedVersions,
+                    }});
+                } else {
+                    respond({ ok: false, error: 'Ação desconhecida: ' + action });
+                }
+            } catch (e) {
+                respond({ ok: false, error: e && e.message });
+            }
         } else if (msg.type === 'ENCRYPT') {
             // 🔒 SafeStorage Bridge (Main Process -> Worker)
             const { id, data } = msg;
@@ -540,34 +678,50 @@ function updateTrayMenu() {
 
     // ── Item de update dinâmico ─────────────────────────────────────────
     const updateMenuItems = [];
-    if (updateState.status === 'ready' && updateState.info) {
+    if (updateState.status === 'available' && updateState.info) {
         updateMenuItems.push({
-            label: `🔄 Reiniciar e atualizar para ${updateState.info.version}`,
-            click: () => applyUpdateAndQuit(),
+            label: `🆕 Nova versão ${updateState.info.version} disponível`,
+            enabled: false,
+        });
+        updateMenuItems.push({
+            label: '⬇️ Baixar agora',
+            click: () => { actionStartDownload(); },
+        });
+        updateMenuItems.push({
+            label: '⏭️ Pular esta versão',
+            click: () => { actionSkipVersion(updateState.info.version); },
         });
     } else if (updateState.status === 'downloading' && updateState.info) {
         updateMenuItems.push({
             label: `⬇️ Baixando ${updateState.info.version}... (${updateState.downloadProgress}%)`,
             enabled: false,
         });
-    } else if (updateState.status === 'error') {
+    } else if (updateState.status === 'ready' && updateState.info) {
         updateMenuItems.push({
-            label: `⚠️ Falha na verificação de atualização`,
+            label: `✅ ${updateState.info.version} pronta para instalar`,
             enabled: false,
         });
         updateMenuItems.push({
-            label: 'Tentar verificar novamente',
-            click: () => {
-                if (!app.isPackaged) return;
-                autoUpdater.checkForUpdates().catch(() => {});
-            },
+            label: '🔄 Instalar e reiniciar agora',
+            click: () => { actionInstallNow(); },
+        });
+        updateMenuItems.push({
+            label: '⏭️ Pular esta versão',
+            click: () => { actionSkipVersion(updateState.info.version); },
+        });
+    } else if (updateState.status === 'error') {
+        updateMenuItems.push({
+            label: `⚠️ Erro ao verificar atualização`,
+            enabled: false,
+        });
+        updateMenuItems.push({
+            label: 'Tentar novamente',
+            click: () => { actionCheckForUpdates(); },
         });
     } else if (app.isPackaged) {
         updateMenuItems.push({
             label: 'Verificar atualizações',
-            click: () => {
-                autoUpdater.checkForUpdates().catch(() => {});
-            },
+            click: () => { actionCheckForUpdates(); },
         });
     }
     if (updateMenuItems.length > 0) updateMenuItems.push({ type: 'separator' });
