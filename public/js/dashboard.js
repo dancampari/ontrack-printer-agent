@@ -1033,15 +1033,39 @@ async function handleLogout() {
 // ==================================================================================
 
 const DISMISSED_KEY = 'ontrack-agent-update-dismissed';
+const DISMISS_TTL_MS = 60 * 60 * 1000; // "Lembrar depois" = silencia por 1h
 
-function getDismissedSession() {
-    try { return JSON.parse(sessionStorage.getItem(DISMISSED_KEY) || '[]'); }
-    catch { return []; }
+// Formato em storage: { [version]: dismissedAt(ms) }
+// TTL de 1h evita que um clique acidental em "Lembrar depois" deixe o modal
+// permanentemente escondido (badge no header mantém visibilidade contínua).
+function getDismissedMap() {
+    try {
+        const raw = sessionStorage.getItem(DISMISSED_KEY) || '{}';
+        const obj = JSON.parse(raw);
+        // Compatibilidade: formato antigo (array de versões) — limpa e adota o novo
+        if (Array.isArray(obj)) {
+            sessionStorage.removeItem(DISMISSED_KEY);
+            return {};
+        }
+        return (obj && typeof obj === 'object') ? obj : {};
+    } catch { return {}; }
+}
+function isDismissed(version) {
+    const map = getDismissedMap();
+    const at = map[version];
+    if (!at) return false;
+    if (Date.now() - at > DISMISS_TTL_MS) {
+        // Expirou — limpa do storage e libera modal de novo
+        delete map[version];
+        try { sessionStorage.setItem(DISMISSED_KEY, JSON.stringify(map)); } catch {}
+        return false;
+    }
+    return true;
 }
 function setDismissedSession(version) {
-    const list = getDismissedSession();
-    if (!list.includes(version)) list.push(version);
-    sessionStorage.setItem(DISMISSED_KEY, JSON.stringify(list));
+    const map = getDismissedMap();
+    map[version] = Date.now();
+    try { sessionStorage.setItem(DISMISSED_KEY, JSON.stringify(map)); } catch {}
 }
 
 async function pollUpdateStatus() {
@@ -1058,7 +1082,7 @@ async function pollUpdateStatus() {
 }
 
 // Badge persistente no header — reflete o estado do auto-updater 100% do tempo.
-// Independente do modal: aparece mesmo quando não há update (mostra "atualizado").
+// Texto SEMPRE curto pra não quebrar baseline do h1. Detalhes vão no title (tooltip).
 function renderUpdateBadge(state) {
     const badge = document.getElementById('updateBadge');
     const label = document.getElementById('updateBadgeLabel');
@@ -1070,12 +1094,10 @@ function renderUpdateBadge(state) {
     const hasNew = v && cur && v !== cur;
     const lastChecked = state && state.lastCheckedAt;
 
-    // Reset classes de estado
     badge.classList.remove(
         'state-idle', 'state-checking', 'state-available',
         'state-downloading', 'state-ready', 'state-error', 'state-skipped'
     );
-    badge.style.removeProperty('--update-progress');
 
     let cls = 'state-idle';
     let text = `v${cur}`;
@@ -1083,38 +1105,36 @@ function renderUpdateBadge(state) {
 
     if (status === 'checking') {
         cls = 'state-checking';
-        text = 'verificando…';
+        text = `v${cur}`;
         title = 'Verificando atualizações no GitHub Releases…';
     } else if (status === 'available' && hasNew) {
         cls = 'state-available';
-        text = `Nova versão ${v} disponível`;
-        title = `Nova versão ${v} disponível (atual: ${cur}). Clique para ver detalhes.`;
+        text = `v${v} disponível`;
+        title = `Nova versão ${v} disponível (atual: ${cur}). Clique para abrir o aviso de atualização.`;
     } else if (status === 'downloading' && v) {
         cls = 'state-downloading';
         const pct = Math.max(0, Math.min(100, state.progress || 0));
-        text = `Baixando ${v}… ${pct}%`;
-        title = `Baixando atualização ${v} (${pct}%). Clique para ver progresso.`;
-        badge.style.setProperty('--update-progress', pct + '%');
+        text = `Baixando ${pct}%`;
+        title = `Baixando ${v} (${pct}%). Clique para acompanhar o progresso.`;
     } else if (status === 'ready' && v) {
         cls = 'state-ready';
-        text = `${v} pronta para instalar`;
+        text = `v${v} pronta`;
         title = `Versão ${v} baixada. Clique para reiniciar e instalar agora.`;
     } else if (status === 'error') {
         cls = 'state-error';
-        text = `v${cur} · falha ao verificar`;
+        text = `v${cur}`;
         title = (state && state.error)
             ? `Falha ao verificar atualizações: ${state.error}. Clique para tentar de novo.`
             : 'Falha ao verificar atualizações. Clique para tentar de novo.';
     } else if (status === 'skipped' && v) {
         cls = 'state-skipped';
-        text = `v${cur} · ${v} ignorada`;
+        text = `v${cur}`;
         title = `Você optou por não ser avisado da versão ${v}. Clique para verificar atualizações.`;
     } else {
-        // idle / up-to-date
         cls = 'state-idle';
-        text = `v${cur} · atualizado`;
+        text = `v${cur}`;
         const when = lastChecked ? formatRelativeTime(lastChecked) : 'ainda nesta sessão';
-        title = `Versão ${cur} (mais recente). Última verificação: ${when}. Clique para checar agora.`;
+        title = `Versão ${cur} — última verificação ${when}. Clique para checar agora.`;
     }
 
     badge.classList.add(cls);
@@ -1182,11 +1202,9 @@ function maybeShowUpdateModal(state) {
         return;
     }
 
-    // Available: só mostra se NÃO foi dispensado nesta sessão
-    if (status === 'available') {
-        const dismissed = getDismissedSession();
-        if (dismissed.includes(v)) return;
-    }
+    // Available: só mostra se NÃO foi dispensado recentemente (TTL 1h).
+    // Se expirou, isDismissed limpa e retorna false — modal reabre.
+    if (status === 'available' && isDismissed(v)) return;
 
     renderUpdateModal(state);
     modal.style.display = 'flex';

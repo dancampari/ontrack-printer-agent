@@ -142,14 +142,14 @@ test('REGRESSÃO: fixQueue tem try/catch ao redor de operações de spooler', ()
     assert.ok(tryBlocks >= 3, `fixQueue deve ter ≥3 blocos try (achei ${tryBlocks})`);
 });
 
-test('REGRESSÃO: package.json está em 3.9.1', () => {
+test('REGRESSÃO: package.json está em 3.9.2', () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
-    assert.equal(pkg.version, '3.9.1');
+    assert.equal(pkg.version, '3.9.2');
 });
 
-test('REGRESSÃO: controllers.js reporta version 3.9.1 em /api/health', () => {
+test('REGRESSÃO: controllers.js reporta version 3.9.2 em /api/health', () => {
     const src = root('api/controllers.js');
-    assert.match(src, /version:\s*['"]3\.9\.1['"]/);
+    assert.match(src, /version:\s*['"]3\.9\.2['"]/);
 });
 
 // ── UX profissional de update (v3.7.2+) ──────────────────────────────────────
@@ -326,15 +326,15 @@ test('UPDATE-BADGE: click em estado available/ready/downloading abre o modal', (
     assert.match(fn[0], /\/api\/update\/check/);
 });
 
-test('UPDATE-BADGE: CSS define todos os estados do badge', () => {
+test('UPDATE-BADGE: CSS define os estados visíveis do badge', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'dashboard.css'), 'utf8');
     assert.match(src, /\.update-badge\s*\{/);
-    for (const cls of ['state-idle', 'state-checking', 'state-available',
-                       'state-downloading', 'state-ready', 'state-error', 'state-skipped']) {
+    // state-idle = visual padrão (herdado de .version-badge), sem regra própria.
+    // Estados que ALTERAM aparência precisam ter regra explícita:
+    for (const cls of ['state-checking', 'state-available', 'state-downloading',
+                       'state-ready', 'state-error', 'state-skipped']) {
         assert.match(src, new RegExp(`\\.update-badge\\.${cls}`), `CSS .${cls} ausente`);
     }
-    // Estado downloading deve ter barra de progresso interna
-    assert.match(src, /--update-progress/);
 });
 
 // ── Tray nativo (v3.9.0+) ────────────────────────────────────────────────────
@@ -433,11 +433,13 @@ test('UI-LIMPA: ícone WiFi vermelho removido (check_circle no caminho checkDoct
     assert.doesNotMatch(checkDoctorBlock[0], />wifi</);
 });
 
-test('UI-LIMPA: dashboard.js usa sessionStorage para "dispensar nesta sessão"', () => {
+test('UI-LIMPA: dashboard.js usa sessionStorage com TTL para "Lembrar depois"', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'dashboard.js'), 'utf8');
     assert.match(src, /sessionStorage/);
-    assert.match(src, /getDismissedSession/);
+    assert.match(src, /isDismissed/);
     assert.match(src, /setDismissedSession/);
+    // TTL: dispensa expira (evita modal preso eternamente por clique acidental)
+    assert.match(src, /DISMISS_TTL_MS/);
 });
 
 // ── Auto-update (v3.7.0+) ────────────────────────────────────────────────────

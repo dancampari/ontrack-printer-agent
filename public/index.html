@@ -58,13 +58,11 @@
                 <div class="logo">
                     <img src="icon.png" alt="Cheflabel Agent" style="width: 32px; height: 32px; border-radius: 6px;">
                     <div>
-                        <h1>OnTrack Agent
-                            <button type="button" id="updateBadge" class="update-badge state-idle"
-                                onclick="onUpdateBadgeClick()" title="Verificar atualizações">
-                                <span class="update-badge-dot"></span>
-                                <span id="updateBadgeLabel">v3.9.1</span>
-                            </button>
-                        </h1>
+                        <h1>OnTrack Agent <span id="updateBadge" class="version-badge update-badge state-idle"
+                                role="button" tabindex="0"
+                                onclick="onUpdateBadgeClick()"
+                                onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();onUpdateBadgeClick();}"
+                                title="Verificar atualizações"><span id="updateBadgeLabel">v3.9.2</span></span></h1>
                         <p class="subtitle">Agente de Impressão</p>
                     </div>
                 </div>

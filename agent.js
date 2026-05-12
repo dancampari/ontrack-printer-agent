@@ -105,7 +105,7 @@ global.requestHtmlPrint = requestHtmlPrint;
 
 async function bootstrap() {
     logger.init();
-    logger.info('MAIN', '=== ONTRACK AGENT v3.9.1 (Badge persistente de update no header do dashboard) ===');
+    logger.info('MAIN', '=== ONTRACK AGENT v3.9.2 (Badge discreto + dismiss com TTL no modal de update) ===');
 
     // 1. Inicializa Autenticação (Tenta carregar sessão do disco)
     const isAuthenticated = await auth.init();
