@@ -52,6 +52,7 @@ let updateState = {
     downloadProgress: 0,   // 0–100
     skippedVersions: readUpdatePrefs().skippedVersions,
     currentVersion: app.getVersion(),
+    lastCheckedAt: null,   // ISO timestamp da última checagem concluída (ok ou erro)
 };
 
 function pushUpdateStateToAgent() {
@@ -69,6 +70,7 @@ function pushUpdateStateToAgent() {
                 error: updateState.error,
                 progress: updateState.downloadProgress,
                 skippedVersions: updateState.skippedVersions,
+                lastCheckedAt: updateState.lastCheckedAt,
             },
         });
     } catch { /* ignore */ }
@@ -214,6 +216,7 @@ autoUpdater.on('checking-for-update', () => {
 });
 
 autoUpdater.on('update-available', (info) => {
+    updateState.lastCheckedAt = new Date().toISOString();
     // Versão pulada anteriormente? Silencia (só registra no estado, sem alerta).
     if (updateState.skippedVersions.includes(info.version)) {
         console.log(`[autoUpdater] versão ${info.version} disponível mas foi pulada pelo usuário.`);
@@ -237,6 +240,7 @@ autoUpdater.on('update-available', (info) => {
 autoUpdater.on('update-not-available', () => {
     updateState.status = 'idle';
     updateState.info = null;
+    updateState.lastCheckedAt = new Date().toISOString();
     pushUpdateStateToAgent();
     updateTrayMenu();
 });
@@ -262,6 +266,7 @@ autoUpdater.on('update-downloaded', (info) => {
 autoUpdater.on('error', (err) => {
     updateState.status = 'error';
     updateState.error = (err && err.message) || String(err);
+    updateState.lastCheckedAt = new Date().toISOString();
     console.warn('[autoUpdater] erro:', updateState.error);
     pushUpdateStateToAgent();
     updateTrayMenu();
@@ -408,6 +413,7 @@ function startAgent() {
                         error: updateState.error,
                         progress: updateState.downloadProgress,
                         skippedVersions: updateState.skippedVersions,
+                        lastCheckedAt: updateState.lastCheckedAt,
                     }});
                 } else {
                     respond({ ok: false, error: 'Ação desconhecida: ' + action });
@@ -676,7 +682,10 @@ function updateTrayMenu() {
     const overallStatus = (sysIcon === 'status-on.png' && prnIcon === 'status-on.png') ? 'Operacional' : 'Aguardando/Atenção';
     tray.setToolTip(`OnTrack Agent: ${overallStatus}\nSistema: ${agentState.status}\nImpressora: ${agentState.printerStatus}`);
 
-    // ── Item de update dinâmico ─────────────────────────────────────────
+    // ── Itens de update dinâmicos ───────────────────────────────────────
+    // Política: SEMPRE expor "Verificar atualizações" + a versão atual,
+    // mesmo quando não há nada novo. Quando há, mostra ações contextuais
+    // antes do item permanente.
     const updateMenuItems = [];
     if (updateState.status === 'available' && updateState.info) {
         updateMenuItems.push({
@@ -691,11 +700,13 @@ function updateTrayMenu() {
             label: '⏭️ Pular esta versão',
             click: () => { actionSkipVersion(updateState.info.version); },
         });
+        updateMenuItems.push({ type: 'separator' });
     } else if (updateState.status === 'downloading' && updateState.info) {
         updateMenuItems.push({
             label: `⬇️ Baixando ${updateState.info.version}... (${updateState.downloadProgress}%)`,
             enabled: false,
         });
+        updateMenuItems.push({ type: 'separator' });
     } else if (updateState.status === 'ready' && updateState.info) {
         updateMenuItems.push({
             label: `✅ ${updateState.info.version} pronta para instalar`,
@@ -709,22 +720,31 @@ function updateTrayMenu() {
             label: '⏭️ Pular esta versão',
             click: () => { actionSkipVersion(updateState.info.version); },
         });
+        updateMenuItems.push({ type: 'separator' });
     } else if (updateState.status === 'error') {
         updateMenuItems.push({
-            label: `⚠️ Erro ao verificar atualização`,
+            label: `⚠️ Erro: ${(updateState.error || 'desconhecido').slice(0, 50)}`,
             enabled: false,
         });
+        updateMenuItems.push({ type: 'separator' });
+    } else if (updateState.status === 'skipped' && updateState.info) {
         updateMenuItems.push({
-            label: 'Tentar novamente',
-            click: () => { actionCheckForUpdates(); },
+            label: `⏭️ ${updateState.info.version} pulada`,
+            enabled: false,
         });
-    } else if (app.isPackaged) {
-        updateMenuItems.push({
-            label: 'Verificar atualizações',
-            click: () => { actionCheckForUpdates(); },
-        });
+        updateMenuItems.push({ type: 'separator' });
     }
-    if (updateMenuItems.length > 0) updateMenuItems.push({ type: 'separator' });
+    // Item PERMANENTE — mostra versão e permite verificação manual.
+    updateMenuItems.push({
+        label: `OnTrack Agent v${updateState.currentVersion}`,
+        enabled: false,
+    });
+    updateMenuItems.push({
+        label: updateState.status === 'checking' ? 'Verificando...' : '🔄 Verificar atualizações',
+        enabled: app.isPackaged && updateState.status !== 'checking' && updateState.status !== 'downloading',
+        click: () => { actionCheckForUpdates(); },
+    });
+    updateMenuItems.push({ type: 'separator' });
 
     const contextMenu = Menu.buildFromTemplate([
         {

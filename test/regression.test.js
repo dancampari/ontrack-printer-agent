@@ -142,17 +142,17 @@ test('REGRESSÃO: fixQueue tem try/catch ao redor de operações de spooler', ()
     assert.ok(tryBlocks >= 3, `fixQueue deve ter ≥3 blocos try (achei ${tryBlocks})`);
 });
 
-test('REGRESSÃO: package.json está em 3.7.1', () => {
+test('REGRESSÃO: package.json está em 3.7.2', () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
-    assert.equal(pkg.version, '3.7.1');
+    assert.equal(pkg.version, '3.7.2');
 });
 
-test('REGRESSÃO: controllers.js reporta version 3.7.1 em /api/health', () => {
+test('REGRESSÃO: controllers.js reporta version 3.7.2 em /api/health', () => {
     const src = root('api/controllers.js');
-    assert.match(src, /version:\s*['"]3\.7\.1['"]/);
+    assert.match(src, /version:\s*['"]3\.7\.2['"]/);
 });
 
-// ── UX profissional de update (v3.7.1+) ──────────────────────────────────────
+// ── UX profissional de update (v3.7.2+) ──────────────────────────────────────
 test('UPDATE-UX: main.js usa autoDownload=false e autoInstallOnAppQuit=false (controle manual)', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
     assert.match(src, /autoUpdater\.autoDownload\s*=\s*false/);
@@ -244,6 +244,43 @@ test('UPDATE-UX: tray menu mostra opções baseadas em status (available/downloa
     assert.match(src, /Baixar agora/);
     assert.match(src, /Pular esta versão/);
     assert.match(src, /Instalar e reiniciar/);
+});
+
+// ── Sempre acessível (v3.7.2+) ───────────────────────────────────────────────
+test('UPDATE-UX: tray SEMPRE tem "Verificar atualizações" (mesmo em idle)', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+    // Item permanente é adicionado fora do bloco if/else if dos status
+    assert.match(src, /Verificar atualizações/);
+    assert.match(src, /OnTrack Agent v.*currentVersion/);
+});
+
+test('UPDATE-UX: main.js rastreia lastCheckedAt nas transições', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+    assert.match(src, /lastCheckedAt:\s*null/, 'inicializa null');
+    // Pelo menos 3 atribuições (available, not-available, error)
+    const updates = (src.match(/updateState\.lastCheckedAt\s*=\s*new Date\(\)\.toISOString\(\)/g) || []).length;
+    assert.ok(updates >= 3, `esperado ≥3 atualizações de lastCheckedAt, achei ${updates}`);
+});
+
+test('UPDATE-UX: banner sempre visível (sem display:none quando idle)', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'dashboard.js'), 'utf8');
+    // O renderUpdateBanner antigo escondia o banner em idle. Novo SEMPRE mostra.
+    assert.match(src, /banner\.style\.display\s*=\s*['"]flex['"]/);
+    // Estado idle deve renderizar card compacto com botão "Verificar atualizações"
+    assert.match(src, /classList\.add\(['"]idle['"]/);
+    assert.match(src, /Verificar atualizações/);
+});
+
+test('UPDATE-UX: banner cobre estado checking + skipped (além dos 4 originais)', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'dashboard.js'), 'utf8');
+    assert.match(src, /status === ['"]checking['"]/);
+    assert.match(src, /status === ['"]skipped['"]/);
+});
+
+test('UPDATE-UX: dashboard.js formata "última verificação" de forma relativa', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'dashboard.js'), 'utf8');
+    assert.match(src, /function formatRelativeTime/);
+    assert.match(src, /lastCheckedAt/);
 });
 
 // ── Auto-update (v3.7.0+) ────────────────────────────────────────────────────

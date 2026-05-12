@@ -132,7 +132,7 @@ const Controllers = {
     health: (req, res) => {
         res.json({
             status: 'ok',
-            version: '3.7.1',
+            version: '3.7.2',
             authenticated: state.isAuthenticated(),
             printerConfigured: !!(state.currentConfig.printerName || state.currentConfig.printerIdentifier),
             defaultPrinter: state.currentConfig.printerName || state.currentConfig.printerIdentifier || null,
@@ -500,7 +500,7 @@ p { margin: 2px 0; }
 <div class="line"></div>
 <p class="center">Assinatura: ___________________</p>
 <p class="center" style="margin-top:6px; font-size:10px;">Impresso em: ${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}</p>
-<p class="center" style="margin-top:4px; font-size:9px; color:#666;">OnTrack — Agente de Impressão v3.7.1</p>
+<p class="center" style="margin-top:4px; font-size:9px; color:#666;">OnTrack — Agente de Impressão v3.7.2</p>
 </body></html>`;
 
         const fs = require('fs');

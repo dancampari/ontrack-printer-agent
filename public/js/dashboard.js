@@ -1044,18 +1044,13 @@ function renderUpdateBanner(state) {
     const banner = document.getElementById('updateBanner');
     if (!banner) return;
 
-    const status = state && state.status;
-    const hasNewVersion = state && state.version && state.version !== state.currentVersion;
-
-    // Esconde banner quando não há nada a mostrar
-    if (!status || status === 'idle' || status === 'skipped' || status === 'checking' || !hasNewVersion) {
-        banner.style.display = 'none';
-        return;
-    }
-
+    // SEMPRE mostra o banner — é o ponto único de visibilidade do sistema
+    // de atualizações no painel. Em idle vira um card discreto com versão
+    // atual + botão "Verificar atualizações".
     banner.style.display = 'flex';
-    banner.classList.remove('ready', 'downloading', 'error');
+    banner.classList.remove('ready', 'downloading', 'error', 'idle', 'checking');
 
+    const status = (state && state.status) || 'idle';
     const titleEl = document.getElementById('updateBannerTitle');
     const subtitleEl = document.getElementById('updateBannerSubtitle');
     const iconEl = document.getElementById('updateBannerIcon').querySelector('.material-symbols-outlined');
@@ -1066,23 +1061,24 @@ function renderUpdateBanner(state) {
     const progressLabelEl = document.getElementById('updateBannerProgressLabel');
     const actionsEl = document.getElementById('updateBannerActions');
 
-    const v = state.version;
-    const cur = state.currentVersion || '';
+    const v = state && state.version;
+    const cur = (state && state.currentVersion) || '—';
+    const lastChecked = state && state.lastCheckedAt ? formatRelativeTime(state.lastCheckedAt) : 'nunca';
 
     // Changelog (release notes do GitHub) — só mostra se tem conteúdo
-    if (state.releaseNotes && String(state.releaseNotes).trim()) {
+    if (state && state.releaseNotes && String(state.releaseNotes).trim()) {
         changelogEl.style.display = '';
-        // Notas podem vir em HTML ou markdown — exibe como texto pré-formatado (seguro)
         notesEl.textContent = stripHtml(String(state.releaseNotes));
     } else {
         changelogEl.style.display = 'none';
     }
 
-    if (status === 'available') {
+    progressEl.style.display = 'none';
+
+    if (status === 'available' && v && v !== cur) {
         iconEl.textContent = 'system_update';
         titleEl.textContent = `Nova versão ${v} disponível`;
         subtitleEl.textContent = `Você está usando ${cur}. Esta atualização traz melhorias e correções.`;
-        progressEl.style.display = 'none';
         actionsEl.innerHTML = `
             <button class="ub-btn ub-btn-primary" onclick="updateAction('download')">
                 <span class="material-symbols-outlined">download</span>Baixar agora
@@ -1090,7 +1086,7 @@ function renderUpdateBanner(state) {
             <button class="ub-btn ub-btn-ghost" onclick="updateAction('skip','${escapeAttr(v)}')">
                 Pular esta versão
             </button>`;
-    } else if (status === 'downloading') {
+    } else if (status === 'downloading' && v) {
         banner.classList.add('downloading');
         iconEl.textContent = 'downloading';
         titleEl.textContent = `Baixando ${v}...`;
@@ -1100,12 +1096,11 @@ function renderUpdateBanner(state) {
         progressFillEl.style.width = pct + '%';
         progressLabelEl.textContent = pct + '%';
         actionsEl.innerHTML = `<button class="ub-btn ub-btn-ghost" disabled>Aguarde...</button>`;
-    } else if (status === 'ready') {
+    } else if (status === 'ready' && v) {
         banner.classList.add('ready');
         iconEl.textContent = 'task_alt';
         titleEl.textContent = `Versão ${v} pronta para instalar`;
         subtitleEl.textContent = `Instalar agora reinicia o agent (impressões em andamento são preservadas na fila).`;
-        progressEl.style.display = 'none';
         actionsEl.innerHTML = `
             <button class="ub-btn ub-btn-success" onclick="updateAction('install')">
                 <span class="material-symbols-outlined">restart_alt</span>Instalar e reiniciar
@@ -1117,15 +1112,50 @@ function renderUpdateBanner(state) {
         banner.classList.add('error');
         iconEl.textContent = 'error';
         titleEl.textContent = 'Falha ao verificar atualização';
-        subtitleEl.textContent = state.error || 'Verifique sua conexão e tente novamente.';
-        progressEl.style.display = 'none';
+        subtitleEl.textContent = (state && state.error) || 'Verifique sua conexão e tente novamente.';
         actionsEl.innerHTML = `
             <button class="ub-btn ub-btn-primary" onclick="updateAction('check')">
                 <span class="material-symbols-outlined">refresh</span>Tentar novamente
             </button>`;
+    } else if (status === 'checking') {
+        banner.classList.add('idle', 'checking');
+        iconEl.textContent = 'sync';
+        titleEl.textContent = `Verificando atualizações...`;
+        subtitleEl.textContent = `Consultando GitHub Releases.`;
+        actionsEl.innerHTML = `<button class="ub-btn ub-btn-ghost" disabled>Aguarde...</button>`;
+    } else if (status === 'skipped' && v) {
+        banner.classList.add('idle');
+        iconEl.textContent = 'skip_next';
+        titleEl.textContent = `Versão atual: ${cur}`;
+        subtitleEl.textContent = `Versão ${v} pulada por você. Última verificação: ${lastChecked}.`;
+        actionsEl.innerHTML = `
+            <button class="ub-btn ub-btn-primary" onclick="updateAction('check')">
+                <span class="material-symbols-outlined">refresh</span>Verificar atualizações
+            </button>`;
     } else {
-        banner.style.display = 'none';
+        // idle (sem update disponível) — card compacto e calmo
+        banner.classList.add('idle');
+        iconEl.textContent = 'check_circle';
+        titleEl.textContent = `Versão atual: ${cur}`;
+        subtitleEl.textContent = `Você está com a versão mais recente. Última verificação: ${lastChecked}.`;
+        actionsEl.innerHTML = `
+            <button class="ub-btn ub-btn-primary" onclick="updateAction('check')">
+                <span class="material-symbols-outlined">refresh</span>Verificar atualizações
+            </button>`;
     }
+}
+
+function formatRelativeTime(iso) {
+    const t = new Date(iso).getTime();
+    if (!t) return '—';
+    const diff = Math.max(0, Date.now() - t);
+    const sec = Math.round(diff / 1000);
+    if (sec < 60) return `agora`;
+    const min = Math.round(sec / 60);
+    if (min < 60) return `há ${min} min`;
+    const h = Math.round(min / 60);
+    if (h < 24) return `há ${h}h`;
+    return new Date(iso).toLocaleString('pt-BR');
 }
 
 async function updateAction(action, version) {

@@ -57,6 +57,30 @@
             box-shadow: 0 2px 8px rgba(0,0,0,0.04);
             animation: ub-slide-in .25s ease-out;
         }
+        /* Estado neutro (idle): card discreto sem chamar atenção */
+        .update-banner.idle {
+            background: rgba(0,0,0,0.02);
+            border: 1px solid rgba(0,0,0,0.08);
+        }
+        html.dark .update-banner.idle {
+            background: rgba(255,255,255,0.03);
+            border-color: rgba(255,255,255,0.08);
+        }
+        .update-banner.idle .update-banner-icon {
+            background: rgba(0,0,0,0.05);
+            color: var(--text-secondary, #6b7280);
+        }
+        html.dark .update-banner.idle .update-banner-icon {
+            background: rgba(255,255,255,0.05);
+            color: #9ca3af;
+        }
+        .update-banner.checking .update-banner-icon .material-symbols-outlined {
+            animation: ub-spin 1.5s linear infinite;
+        }
+        @keyframes ub-spin {
+            from { transform: rotate(0deg); }
+            to   { transform: rotate(360deg); }
+        }
         .update-banner.ready {
             background: linear-gradient(135deg, rgba(16,185,129,0.12), rgba(5,150,105,0.06));
             border-color: rgba(16,185,129,0.45);
@@ -169,7 +193,7 @@
                 <div class="logo">
                     <img src="icon.png" alt="Cheflabel Agent" style="width: 32px; height: 32px; border-radius: 6px;">
                     <div>
-                        <h1>OnTrack Agent <span class="version-badge">v3.7.1</span></h1>
+                        <h1>OnTrack Agent <span class="version-badge">v3.7.2</span></h1>
                         <p class="subtitle">Agente de Impressão</p>
                     </div>
                 </div>
