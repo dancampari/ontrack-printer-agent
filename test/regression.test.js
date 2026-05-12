@@ -569,16 +569,21 @@ test('FLUXO RÁPIDO: main.js processa PRINT_HTML e envia ao spooler persistente'
         'main.js deve injetar HTML no spooler offscreen');
 });
 
-test('FLUXO RÁPIDO: frontend (printOrchestrator) usa printDirectly E sendToCloudQueue', () => {
-    const orch = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'lib', 'print', 'printOrchestrator.ts'), 'utf8');
+// Esses dois testes leem arquivos do FRONTEND (my-app/src/lib/print/*) que
+// vivem em outro repo. Em CI isolado (apenas o Printer-Agent), os paths não
+// existem — pulamos elegantemente com test.skip nesses casos.
+const FRONTEND_ORCH = path.join(__dirname, '..', '..', 'src', 'lib', 'print', 'printOrchestrator.ts');
+const FRONTEND_CLIENT = path.join(__dirname, '..', '..', 'src', 'lib', 'print', 'localAgentClient.ts');
+const hasFrontendSources = fs.existsSync(FRONTEND_ORCH) && fs.existsSync(FRONTEND_CLIENT);
+
+test('FLUXO RÁPIDO: frontend (printOrchestrator) usa printDirectly E sendToCloudQueue', { skip: !hasFrontendSources && 'frontend sources não disponíveis (CI isolado)' }, () => {
+    const orch = fs.readFileSync(FRONTEND_ORCH, 'utf8');
     assert.match(orch, /LocalAgentClient\.printDirectly/, 'orchestrator deve tentar printDirectly');
     assert.match(orch, /sendToCloudQueue/, 'orchestrator deve ter caminho da fila como fallback');
-    // A ordem do fluxo (printDirectly vem antes da fila no Desktop) é coberta pelos
-    // testes do printOrchestrator.test.ts (vitest) — não duplicamos aqui.
 });
 
-test('FLUXO RÁPIDO: localAgentClient envia para POST /api/local-print', () => {
-    const src = fs.readFileSync(path.join(__dirname, '..', '..', 'src', 'lib', 'print', 'localAgentClient.ts'), 'utf8');
+test('FLUXO RÁPIDO: localAgentClient envia para POST /api/local-print', { skip: !hasFrontendSources && 'frontend sources não disponíveis (CI isolado)' }, () => {
+    const src = fs.readFileSync(FRONTEND_CLIENT, 'utf8');
     assert.match(src, /\/api\/local-print/, 'cliente deve apontar para /api/local-print');
     assert.match(src, /method:\s*['"]POST['"]/, 'deve usar método POST');
 });
