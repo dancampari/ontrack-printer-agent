@@ -105,7 +105,7 @@ global.requestHtmlPrint = requestHtmlPrint;
 
 async function bootstrap() {
     logger.init();
-    logger.info('MAIN', '=== ONTRACK AGENT v3.9.4 (Fix CRÍTICO: modal de update agora aplica classe .active e fica visível) ===');
+    logger.info('MAIN', '=== ONTRACK AGENT v3.9.5 (Modal: tipografia compacta + hierarquia visual CTA/ghost/link) ===');
 
     // 1. Inicializa Autenticação (Tenta carregar sessão do disco)
     const isAuthenticated = await auth.init();

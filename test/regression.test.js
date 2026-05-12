@@ -142,14 +142,14 @@ test('REGRESSÃO: fixQueue tem try/catch ao redor de operações de spooler', ()
     assert.ok(tryBlocks >= 3, `fixQueue deve ter ≥3 blocos try (achei ${tryBlocks})`);
 });
 
-test('REGRESSÃO: package.json está em 3.9.4', () => {
+test('REGRESSÃO: package.json está em 3.9.5', () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
-    assert.equal(pkg.version, '3.9.4');
+    assert.equal(pkg.version, '3.9.5');
 });
 
-test('REGRESSÃO: controllers.js reporta version 3.9.4 em /api/health', () => {
+test('REGRESSÃO: controllers.js reporta version 3.9.5 em /api/health', () => {
     const src = root('api/controllers.js');
-    assert.match(src, /version:\s*['"]3\.9\.4['"]/);
+    assert.match(src, /version:\s*['"]3\.9\.5['"]/);
 });
 
 // ── UX profissional de update (v3.7.2+) ──────────────────────────────────────
@@ -241,10 +241,13 @@ test('UPDATE-UX: dashboard.js usa modal (não banner) e respeita dispensa', () =
     assert.doesNotMatch(src, /updateBanner/);
 });
 
-test('UPDATE-UX: modal tem 3 ações para "available" (lembrar/não exibir/baixar e instalar)', () => {
+test('UPDATE-UX: modal tem 3 ações para "available" (lembrar/pular/baixar e instalar)', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'dashboard.js'), 'utf8');
     assert.match(src, /Lembrar depois/);
-    assert.match(src, /Não exibir mais este aviso/);
+    // Texto curto pra caber numa linha; mantém semântica de "não exibir mais"
+    assert.match(src, /Pular esta versão/);
+    // skipUpdateVersion ainda é a ação ligada ao botão (persiste no backend)
+    assert.match(src, /skipUpdateVersion\(/);
     assert.match(src, /Baixar e instalar/, 'botão deve ser "Baixar e instalar" (auto-install)');
     // E DEVE passar autoInstall: true no body do POST
     assert.match(src, /updateAction\(['"]download['"],\s*\{\s*autoInstall:\s*true\s*\}\)/);

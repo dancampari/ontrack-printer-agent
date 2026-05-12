@@ -8,7 +8,7 @@ const Controllers = require('./controllers');
 const logger = require('../utils/logger');
 const wsBroadcast = require('../core/wsBroadcast');
 
-const AGENT_VERSION = '3.9.4';
+const AGENT_VERSION = '3.9.5';
 
 class Server {
     start() {

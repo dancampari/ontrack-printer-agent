@@ -1128,28 +1128,69 @@ button:disabled {
     display: flex;
     gap: 8px;
     justify-content: flex-end;
+    align-items: center;
+    flex-wrap: wrap;
 }
 
-.btn-cancel {
-    background: var(--background);
-    color: var(--foreground);
-    border: 1px solid var(--input);
-    padding: 0 16px;
+/* Botões do modal — tipografia menor, padding compacto, sem quebra de linha */
+.modal-actions .btn-cancel,
+.modal-actions .btn-confirm {
+    height: 32px;
+    font-size: 12.5px;
+    padding: 0 12px;
+    border-radius: calc(var(--radius) - 2px);
+    white-space: nowrap;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+    letter-spacing: 0;
 }
 
-.btn-cancel:hover {
+/* Secundário: ghost — fundo transparente, borda sutil */
+.modal-actions .btn-cancel {
+    background: transparent;
+    color: var(--muted-foreground);
+    border: 1px solid var(--border);
+    font-weight: 500;
+}
+.modal-actions .btn-cancel:hover {
     background: var(--accent);
+    color: var(--foreground);
+    border-color: color-mix(in hsl, var(--border) 60%, var(--foreground) 20%);
 }
 
-.btn-confirm {
+/* Primário (CTA): destacado em primary, peso semibold */
+.modal-actions .btn-confirm {
     background: var(--primary);
     color: var(--primary-foreground);
-    padding: 0 16px;
+    border: 1px solid var(--primary);
     font-weight: 600;
 }
+.modal-actions .btn-confirm:hover {
+    background: color-mix(in hsl, var(--primary) 85%, var(--foreground) 15%);
+    border-color: color-mix(in hsl, var(--primary) 85%, var(--foreground) 15%);
+}
 
-.btn-confirm:hover {
-    opacity: 0.9;
+/* Variante de baixíssima ênfase: link de texto, sem borda nem fundo */
+.modal-actions .btn-link {
+    height: 32px;
+    background: transparent;
+    border: none;
+    color: var(--muted-foreground);
+    font-size: 12px;
+    padding: 0 6px;
+    cursor: pointer;
+    font-family: inherit;
+    text-decoration: underline;
+    text-decoration-color: color-mix(in hsl, var(--muted-foreground) 40%, transparent);
+    text-underline-offset: 3px;
+    white-space: nowrap;
+    margin-right: auto; /* empurra para a esquerda */
+    transition: color 0.15s ease;
+}
+.modal-actions .btn-link:hover {
+    color: var(--foreground);
+    text-decoration-color: var(--foreground);
 }
 
 /* ─────────────────────────────────────────────

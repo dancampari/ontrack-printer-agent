@@ -1,7 +1,7 @@
 {
   "name": "ontrack-printer-agent",
   "productName": "OnTrack Agent",
-  "version": "3.9.4",
+  "version": "3.9.5",
   "author": "OnTrack",
   "description": "Agente de impressão térmica para o sistema OnTrack",
   "main": "main.js",

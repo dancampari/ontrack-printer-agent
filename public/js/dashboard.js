@@ -1291,9 +1291,10 @@ function renderUpdateModal(state) {
         iconEl.textContent = 'system_update';
         titleEl.textContent = `Nova versão ${v} disponível`;
         subtitleEl.textContent = `Você está usando ${cur}. Ao confirmar, o agent baixa em background e reinicia automaticamente para aplicar. Impressões pendentes na fila são preservadas.`;
+        // Hierarquia: link sutil (ignorar) à esquerda, ghost (adiar), CTA (instalar) à direita
         actionsEl.innerHTML = `
+            <button type="button" class="btn-link" onclick="skipUpdateVersion('${escapeAttr(v)}')" title="Não exibir mais o aviso para esta versão">Pular esta versão</button>
             <button type="button" class="btn-cancel" onclick="dismissUpdateModal()">Lembrar depois</button>
-            <button type="button" class="btn-cancel" onclick="skipUpdateVersion('${escapeAttr(v)}')">Não exibir mais este aviso</button>
             <button type="button" class="btn-confirm" onclick="updateAction('download', { autoInstall: true })">Baixar e instalar</button>`;
     } else if (status === 'downloading' && v) {
         iconEl.textContent = 'downloading';
