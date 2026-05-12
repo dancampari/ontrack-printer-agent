@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Tray, Menu, nativeImage, Notification, ipcMain, nativeTheme, safeStorage } = require('electron');
+const { app, BrowserWindow, Tray, Menu, nativeImage, Notification, ipcMain, nativeTheme, safeStorage, screen } = require('electron');
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
@@ -197,6 +197,7 @@ if (!app.requestSingleInstanceLock()) {
         }
 
         createPersistentSpooler(); // Cria o Spooler Invisível
+        createTrayPopup();         // Pré-cria popup (oculto) para clique instantâneo
         startAgent(); // Inicia o motor
 
         // Verifica se deve abrir a janela ou ficar na bandeja
@@ -330,9 +331,11 @@ function registerDeviceChangeWatcher() {
     }
 }
 
-// Escuta mudanças de tema do SO para atualizar ícones em tempo real
+// Escuta mudanças de tema do SO para atualizar ícones do menu nativo (fallback)
+// E re-empurra o state pro popup HTML (claro ↔ escuro segue o Windows ao vivo).
 nativeTheme.on('updated', () => {
     updateTrayMenu();
+    pushTrayState();
 });
 
 // 0. SPOOLER PERSISTENTE
@@ -674,8 +677,22 @@ function createTray() {
 
     tray = new Tray(trayIcon);
     tray.setToolTip('OnTrack Agent - Protegido');
-    tray.on('double-click', () => mainWindow.show());
-    updateTrayMenu();
+
+    // Substitui o menu nativo padrão por um popup HTML com realtime.
+    // Esquerdo, direito e duplo-clique abrem o popup (UX unificada).
+    // Em caso de falha do popup, showTrayPopup cai automaticamente para o
+    // menu nativo construído por updateTrayMenu (fallback).
+    tray.on('click', () => showTrayPopup());
+    tray.on('right-click', () => showTrayPopup());
+    tray.on('double-click', () => {
+        if (mainWindow) {
+            if (mainWindow.isMinimized()) mainWindow.restore();
+            mainWindow.show();
+            mainWindow.focus();
+        }
+    });
+
+    updateTrayMenu(); // popula lastNativeMenu (fallback) e tooltip
 }
 
 function getIcon(name) {
@@ -769,6 +786,10 @@ function updateTrayMenu() {
         && updateState.status !== 'checking'
         && updateState.status !== 'downloading';
 
+    // O menu nativo é mantido como FALLBACK: usado se o popup HTML falhar.
+    // No caminho feliz, o usuário vê o popup HTML (realtime). Em qualquer
+    // erro de criação/posicionamento do popup, cai pra esse menu via
+    // tray.popUpContextMenu(buildNativeMenu()).
     const contextMenu = Menu.buildFromTemplate([
         {
             label: `OnTrack Agent v${updateState.currentVersion}`,
@@ -831,8 +852,244 @@ function updateTrayMenu() {
         },
     ]);
 
-    tray.setContextMenu(contextMenu);
+    // Cacheia o menu para uso como FALLBACK se o popup HTML falhar.
+    // NÃO chamamos tray.setContextMenu(contextMenu) — assim o clique padrão
+    // não abre o menu nativo automaticamente; quem comanda é o tray.on('click').
+    lastNativeMenu = contextMenu;
+
+    // Push do estado pro popup HTML (se estiver aberto, atualiza em realtime).
+    pushTrayState();
 }
+
+// ── Tray Popup HTML (substitui menu nativo, mantém fallback) ────────────────
+let lastNativeMenu = null;
+let trayPopupWindow = null;
+let trayPopupHideTimer = null;
+const TRAY_POPUP_WIDTH = 300;
+const TRAY_POPUP_HEIGHT = 540;
+
+function createTrayPopup() {
+    // Padrão consagrado de "tray window" em Electron (Slack, Docker, Rocket.Chat):
+    //  - transparent + frame:false + alwaysOnTop
+    //  - useContentSize evita off-by-one em escala 125%/150% do Windows
+    //  - paintWhenInitiallyHidden força paint do conteúdo durante show:false
+    //    (evita flash branco no primeiro click)
+    //  - backgroundThrottling:false mantém o compositor ativo enquanto oculto
+    trayPopupWindow = new BrowserWindow({
+        width: TRAY_POPUP_WIDTH,
+        height: TRAY_POPUP_HEIGHT,
+        useContentSize: true,
+        show: false,
+        frame: false,
+        transparent: true,
+        resizable: false,
+        movable: false,
+        skipTaskbar: true,
+        alwaysOnTop: true,
+        fullscreenable: false,
+        focusable: true,
+        paintWhenInitiallyHidden: true,
+        hasShadow: false, // sombra própria via CSS (transparente sem artefatos)
+        webPreferences: {
+            preload: path.join(__dirname, 'preloadTray.js'),
+            contextIsolation: true,
+            nodeIntegration: false,
+            sandbox: false,
+            backgroundThrottling: false,
+        },
+    });
+    trayPopupWindow.setMenu(null);
+    trayPopupWindow.loadFile(path.join(__dirname, 'public', 'tray-popup.html'));
+
+    // "Warm-up dance": mostra invisível por 1 frame para preparar o compositor
+    // do Windows. Sem isso, o primeiro show pisca branco. Padrão usado por
+    // várias libs de tray-window (electron-tray-window, menubar, etc).
+    trayPopupWindow.once('ready-to-show', () => {
+        try {
+            trayPopupWindow.setOpacity(0);
+            trayPopupWindow.showInactive();
+            setTimeout(() => {
+                if (trayPopupWindow && !trayPopupWindow.isDestroyed()) {
+                    trayPopupWindow.hide();
+                    trayPopupWindow.setOpacity(1);
+                }
+            }, 50);
+        } catch { /* ignore */ }
+    });
+
+    // Fecha ao perder foco (clique fora). Debounce de 120ms evita race em
+    // cliques rápidos que disparam blur antes do hide intencional.
+    trayPopupWindow.on('blur', () => {
+        if (trayPopupHideTimer) clearTimeout(trayPopupHideTimer);
+        trayPopupHideTimer = setTimeout(() => {
+            if (trayPopupWindow && !trayPopupWindow.isDestroyed()) trayPopupWindow.hide();
+        }, 120);
+    });
+    trayPopupWindow.on('show', () => {
+        if (trayPopupHideTimer) { clearTimeout(trayPopupHideTimer); trayPopupHideTimer = null; }
+    });
+}
+
+function positionTrayPopup() {
+    if (!trayPopupWindow || trayPopupWindow.isDestroyed()) return;
+
+    // Algoritmo dos 4 quadrantes (mesma estratégia de electron-tray-window,
+    // menubar, Rocket.Chat). Determina onde o tray icon está e abre o popup
+    // "para dentro" da tela.
+    //
+    // tray.getBounds() pode retornar zeros se o ícone está no overflow
+    // (atrás da seta `^` do Windows). Fallback: cursor no momento do click.
+    let trayBounds = tray ? tray.getBounds() : null;
+    const cursor = screen.getCursorScreenPoint();
+    const trayBoundsInvalid = !trayBounds || (!trayBounds.width && !trayBounds.height);
+    if (trayBoundsInvalid) {
+        trayBounds = { x: cursor.x - 8, y: cursor.y - 8, width: 16, height: 16 };
+    }
+
+    // Pega o display em que o tray icon (ou cursor) está
+    const refPoint = { x: trayBounds.x, y: trayBounds.y, width: 1, height: 1 };
+    const display = screen.getDisplayMatching(refPoint);
+    const screenSize = display.workAreaSize;
+    const screenOrigin = display.workArea;
+
+    // Posição relativa ao display
+    const relX = trayBounds.x - screenOrigin.x;
+    const relY = trayBounds.y - screenOrigin.y;
+
+    // Quadrante: 1=top-left, 2=top-right, 3=bottom-left, 4=bottom-right
+    let quad = 4;
+    quad = (relY > screenSize.height / 2) ? quad : quad / 2;
+    quad = (relX > screenSize.width / 2)  ? quad : quad - 1;
+
+    const w = TRAY_POPUP_WIDTH;
+    const h = TRAY_POPUP_HEIGHT;
+    let x = 0, y = 0;
+
+    switch (quad) {
+        case 1: // top-left  (taskbar superior/esquerda)
+            x = Math.floor(trayBounds.x + trayBounds.width / 2);
+            y = Math.floor(trayBounds.y + trayBounds.height + 4);
+            break;
+        case 2: // top-right (taskbar superior, ícone à direita)
+            x = Math.floor(trayBounds.x - w + trayBounds.width / 2);
+            y = Math.floor(trayBounds.y + trayBounds.height + 4);
+            break;
+        case 3: // bottom-left (taskbar inferior/esquerda)
+            x = Math.floor(trayBounds.x + trayBounds.width / 2);
+            y = Math.floor(trayBounds.y - h - 4);
+            break;
+        case 4: // bottom-right (CASO MAIS COMUM: taskbar inferior, ícone à direita)
+        default:
+            x = Math.floor(trayBounds.x - w + trayBounds.width / 2);
+            y = Math.floor(trayBounds.y - h - 4);
+            break;
+    }
+
+    // Clamp final pra garantir que está totalmente dentro do display
+    x = Math.max(screenOrigin.x + 8, Math.min(screenOrigin.x + screenSize.width - w - 8, x));
+    y = Math.max(screenOrigin.y + 8, Math.min(screenOrigin.y + screenSize.height - h - 8, y));
+
+    trayPopupWindow.setBounds({ x, y, width: w, height: h });
+}
+
+function showTrayPopup() {
+    try {
+        if (!trayPopupWindow || trayPopupWindow.isDestroyed()) createTrayPopup();
+        if (trayPopupWindow.isVisible()) {
+            trayPopupWindow.hide();
+            return;
+        }
+        // Ordem importa: setBounds ANTES de show evita o "flash" do popup
+        // aparecer na posição antiga e pular para a nova.
+        positionTrayPopup();
+        // showInactive + focus separados → mais estável que show() puro no Windows.
+        trayPopupWindow.showInactive();
+        trayPopupWindow.focus();
+        pushTrayState();
+    } catch (e) {
+        // Fallback: se algo na BrowserWindow falhar, usa o menu nativo do Windows.
+        console.warn('[tray] popup falhou, fallback nativo:', e && e.message);
+        try {
+            if (lastNativeMenu && tray) tray.popUpContextMenu(lastNativeMenu);
+        } catch { /* ignore */ }
+    }
+}
+
+function hideTrayPopup() {
+    if (trayPopupWindow && !trayPopupWindow.isDestroyed()) trayPopupWindow.hide();
+}
+
+function pushTrayState() {
+    if (!trayPopupWindow || trayPopupWindow.isDestroyed()) return;
+    try {
+        trayPopupWindow.webContents.send('tray:state', {
+            // Fonte autoritativa do tema = Electron nativeTheme (segue o Windows
+            // automaticamente). Popup aplica .dark no <html> conforme.
+            theme: nativeTheme.shouldUseDarkColors ? 'dark' : 'light',
+            agent: agentState,
+            update: {
+                status: updateState.status,
+                version: updateState.info && updateState.info.version,
+                currentVersion: updateState.currentVersion,
+                progress: updateState.downloadProgress,
+                error: updateState.error,
+                autoInstall: !!updateState.autoInstallAfterDownload,
+                canCheck: app.isPackaged
+                    && updateState.status !== 'checking'
+                    && updateState.status !== 'downloading',
+            },
+        });
+    } catch { /* ignore */ }
+}
+
+// IPC do popup → main: roteia para as funções existentes.
+ipcMain.on('tray:action', (_evt, msg) => {
+    const action = msg && msg.action;
+    const payload = msg && msg.payload;
+    switch (action) {
+        case 'request-state':
+            pushTrayState();
+            break;
+        case 'check-updates':
+            actionCheckForUpdates();
+            break;
+        case 'update-download-and-install':
+            actionStartDownload({ autoInstall: true });
+            break;
+        case 'update-install':
+            actionInstallNow();
+            break;
+        case 'update-skip':
+            actionSkipVersion(payload && payload.version);
+            hideTrayPopup();
+            break;
+        case 'fix-queue':
+            if (agentProcess) agentProcess.send({ type: 'FORCE_CLEAR_QUEUE' });
+            if (tray) tray.displayBalloon({ title: 'Manutenção', content: 'Limpando spooler...' });
+            hideTrayPopup();
+            break;
+        case 'test-print':
+            if (agentProcess) agentProcess.send({ type: 'RUN_TEST_PRINT' });
+            hideTrayPopup();
+            break;
+        case 'open-dashboard':
+            if (mainWindow) {
+                if (mainWindow.isMinimized()) mainWindow.restore();
+                mainWindow.show();
+                mainWindow.focus();
+            }
+            hideTrayPopup();
+            break;
+        case 'quit':
+            app.isQuitting = true;
+            if (agentProcess) agentProcess.kill();
+            app.quit();
+            break;
+        case 'close':
+            hideTrayPopup();
+            break;
+    }
+});
 
 app.on('before-quit', () => {
     if (agentProcess) agentProcess.kill();

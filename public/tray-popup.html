@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <title>OnTrack Tray</title>
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200">
+    <link rel="stylesheet" href="css/tray-popup.css">
+    <script>
+        // Anti-flash: aplica o tema do SO antes do paint inicial.
+        // (BrowserWindow do popup tem seu próprio storage isolado — não dá
+        // pra ler do dashboard. O main.js empurra o tema autoritativo via
+        // IPC logo depois, mas o matchMedia já evita o flash de modo errado.)
+        (function () {
+            try {
+                if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                    document.documentElement.classList.add('dark');
+                }
+            } catch { /* ignore */ }
+        })();
+    </script>
+</head>
+<body>
+    <div class="popup">
+        <!-- Header com nome + versão -->
+        <header class="popup-header">
+            <div class="popup-brand">
+                <img src="icon.png" alt="OnTrack" class="popup-logo">
+                <div>
+                    <div class="popup-title">OnTrack Agent</div>
+                    <div class="popup-version" id="currentVersion">v—</div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Bloco de update (visível só quando há ação) -->
+        <section id="updateSection" class="popup-section" style="display:none;">
+            <div class="popup-update-row">
+                <span class="material-symbols-outlined popup-update-icon" id="updateIcon">system_update</span>
+                <div class="popup-update-body">
+                    <div class="popup-update-title" id="updateTitle">Atualização</div>
+                    <div class="popup-update-subtitle" id="updateSubtitle"></div>
+                    <div class="popup-progress" id="updateProgress" style="display:none;">
+                        <div class="popup-progress-bar">
+                            <div class="popup-progress-fill" id="updateProgressFill"></div>
+                        </div>
+                        <span class="popup-progress-label" id="updateProgressLabel">0%</span>
+                    </div>
+                </div>
+            </div>
+            <div class="popup-update-actions" id="updateActions"></div>
+        </section>
+
+        <!-- Status em tempo real -->
+        <section class="popup-section popup-status">
+            <div class="popup-status-row" id="sysStatusRow">
+                <span class="popup-status-dot" id="sysDot"></span>
+                <span class="popup-status-label">Sistema</span>
+                <span class="popup-status-value" id="sysStatusValue">…</span>
+            </div>
+            <div class="popup-status-row" id="prnStatusRow">
+                <span class="popup-status-dot" id="prnDot"></span>
+                <span class="popup-status-label">Impressora</span>
+                <span class="popup-status-value" id="prnNameValue">…</span>
+            </div>
+            <div class="popup-status-row" id="prnDetailRow">
+                <span class="popup-status-dot" id="prnDetailDot"></span>
+                <span class="popup-status-label">Status</span>
+                <span class="popup-status-value" id="prnStatusValue">…</span>
+            </div>
+        </section>
+
+        <!-- Ações -->
+        <section class="popup-section popup-actions">
+            <button class="popup-btn" id="btnCheckUpdates" data-action="check-updates">
+                <span class="material-symbols-outlined popup-btn-icon" id="checkUpdatesIcon">refresh</span>
+                <span class="popup-btn-label" id="checkUpdatesLabel">Verificar atualizações</span>
+            </button>
+            <button class="popup-btn" data-action="fix-queue">
+                <span class="material-symbols-outlined popup-btn-icon">cleaning_services</span>
+                <span class="popup-btn-label">Corrigir Fila de Impressão</span>
+            </button>
+            <button class="popup-btn" data-action="test-print">
+                <span class="material-symbols-outlined popup-btn-icon">print</span>
+                <span class="popup-btn-label">Imprimir Página de Teste</span>
+            </button>
+            <button class="popup-btn" data-action="open-dashboard">
+                <span class="material-symbols-outlined popup-btn-icon">tune</span>
+                <span class="popup-btn-label">Abrir Painel de Controle</span>
+            </button>
+        </section>
+
+        <!-- Sair -->
+        <section class="popup-section popup-section-quit">
+            <button class="popup-btn popup-btn-danger" data-action="quit">
+                <span class="material-symbols-outlined popup-btn-icon">power_settings_new</span>
+                <span class="popup-btn-label">Sair</span>
+            </button>
+        </section>
+    </div>
+
+    <script src="js/tray-popup.js"></script>
+</body>
+</html>
