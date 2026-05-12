@@ -142,14 +142,14 @@ test('REGRESSÃO: fixQueue tem try/catch ao redor de operações de spooler', ()
     assert.ok(tryBlocks >= 3, `fixQueue deve ter ≥3 blocos try (achei ${tryBlocks})`);
 });
 
-test('REGRESSÃO: package.json está em 3.7.2', () => {
+test('REGRESSÃO: package.json está em 3.9.0', () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
-    assert.equal(pkg.version, '3.8.1');
+    assert.equal(pkg.version, '3.9.0');
 });
 
-test('REGRESSÃO: controllers.js reporta version 3.7.2 em /api/health', () => {
+test('REGRESSÃO: controllers.js reporta version 3.9.0 em /api/health', () => {
     const src = root('api/controllers.js');
-    assert.match(src, /version:\s*['"]3\.8\.1['"]/);
+    assert.match(src, /version:\s*['"]3\.9\.0['"]/);
 });
 
 // ── UX profissional de update (v3.7.2+) ──────────────────────────────────────
@@ -288,135 +288,33 @@ test('AUTO-INSTALL: dashboard.js usa polling adaptativo (1s durante download)', 
     assert.match(src, /status\s*===\s*['"]downloading['"]\s*\)\s*\?\s*1000\s*:\s*5000/);
 });
 
-// ── Tray Popup HTML (v3.8.0+) ────────────────────────────────────────────────
-test('TRAY-POPUP: arquivos HTML/CSS/JS do popup existem', () => {
+// ── Tray nativo (v3.9.0+) ────────────────────────────────────────────────────
+// Em v3.8.x tentamos um popup HTML para realtime no tray. Posicionamento e
+// flicker eram impossíveis de domar consistentemente no Windows (mesmo com
+// o algoritmo dos 4 quadrantes + opacity 0/1 + bounds vindos do event).
+// Revertemos para o menu nativo do Windows — mesma decisão do Docker Desktop,
+// OneDrive e Slack. O Windows controla posição, foco e dismiss; ZERO bugs.
+test('TRAY-NATIVE: arquivos do popup HTML foram REMOVIDOS', () => {
     const publicDir = path.join(__dirname, '..', 'public');
-    assert.ok(fs.existsSync(path.join(publicDir, 'tray-popup.html')));
-    assert.ok(fs.existsSync(path.join(publicDir, 'css', 'tray-popup.css')));
-    assert.ok(fs.existsSync(path.join(publicDir, 'js', 'tray-popup.js')));
-    assert.ok(fs.existsSync(path.join(__dirname, '..', 'preloadTray.js')));
+    assert.ok(!fs.existsSync(path.join(publicDir, 'tray-popup.html')), 'tray-popup.html não pode mais existir');
+    assert.ok(!fs.existsSync(path.join(publicDir, 'css', 'tray-popup.css')), 'tray-popup.css não pode mais existir');
+    assert.ok(!fs.existsSync(path.join(publicDir, 'js', 'tray-popup.js')), 'tray-popup.js não pode mais existir');
+    assert.ok(!fs.existsSync(path.join(__dirname, '..', 'preloadTray.js')), 'preloadTray.js não pode mais existir');
 });
 
-test('TRAY-POPUP: preloadTray expõe trayAPI com onStateUpdate + send', () => {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'preloadTray.js'), 'utf8');
-    assert.match(src, /contextBridge\.exposeInMainWorld\(['"]trayAPI['"]/);
-    assert.match(src, /onStateUpdate/);
-    assert.match(src, /send/);
-    assert.match(src, /tray:state/);
-    assert.match(src, /tray:action/);
-});
-
-test('TRAY-POPUP: main.js cria BrowserWindow do popup com config segura', () => {
+test('TRAY-NATIVE: main.js usa tray.setContextMenu (menu nativo do Windows)', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
-    assert.match(src, /function createTrayPopup/);
-    assert.match(src, /preloadTray\.js/);
-    assert.match(src, /contextIsolation:\s*true/);
-    assert.match(src, /nodeIntegration:\s*false/);
-    assert.match(src, /frame:\s*false/);
-    assert.match(src, /alwaysOnTop:\s*true/);
-    assert.match(src, /skipTaskbar:\s*true/);
+    assert.match(src, /tray\.setContextMenu\(contextMenu\)/);
+    // Não pode mais ter o popup HTML
+    assert.doesNotMatch(src, /createTrayPopup/);
+    assert.doesNotMatch(src, /trayPopupWindow/);
+    assert.doesNotMatch(src, /showTrayPopup/);
+    assert.doesNotMatch(src, /preloadTray\.js/);
 });
 
-test('TRAY-POPUP: showTrayPopup tem fallback para menu nativo em erro', () => {
+test('TRAY-NATIVE: double-click no tray abre o painel principal', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
-    const fn = src.match(/function showTrayPopup[\s\S]*?(?=\nfunction\s|\n\/\/\s|$)/);
-    assert.ok(fn, 'showTrayPopup precisa ser localizável');
-    assert.match(fn[0], /try\s*\{/);
-    assert.match(fn[0], /catch\s*\(/);
-    assert.match(fn[0], /popUpContextMenu\(lastNativeMenu\)/);
-});
-
-test('TRAY-POPUP: tray.on(click) abre o popup (não mais setContextMenu fixo)', () => {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
-    assert.match(src, /tray\.on\(['"]click['"],\s*\(\)\s*=>\s*showTrayPopup/);
-    assert.match(src, /tray\.on\(['"]right-click['"],\s*\(\)\s*=>\s*showTrayPopup/);
-});
-
-test('TRAY-POPUP: pushTrayState envia state via webContents.send tray:state', () => {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
-    assert.match(src, /function pushTrayState/);
-    assert.match(src, /webContents\.send\(['"]tray:state['"]/);
-});
-
-test('TRAY-POPUP: updateTrayMenu chama pushTrayState (realtime no popup aberto)', () => {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
-    const fn = src.match(/function updateTrayMenu\(\)\s*\{[\s\S]*?^}/m);
-    assert.ok(fn, 'updateTrayMenu precisa ser localizável');
-    assert.match(fn[0], /pushTrayState\(\)/);
-    assert.match(fn[0], /lastNativeMenu\s*=\s*contextMenu/);
-});
-
-test('TRAY-POPUP: ipcMain trata tray:action com router de ações', () => {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
-    assert.match(src, /ipcMain\.on\(['"]tray:action['"]/);
-    // Pelo menos os 8 actions principais
-    for (const action of ['request-state', 'check-updates', 'update-download-and-install',
-        'update-install', 'update-skip', 'fix-queue', 'test-print', 'open-dashboard', 'quit']) {
-        assert.match(src, new RegExp(`case ['"]${action}['"]`), `action ${action} ausente`);
-    }
-});
-
-test('TRAY-POPUP: positionTrayPopup usa algoritmo dos 4 quadrantes (electron-tray-window style)', () => {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
-    // Algoritmo padrão: tray.getBounds() + screen.workAreaSize + 4 quadrantes
-    assert.match(src, /tray\.getBounds\(\)/);
-    assert.match(src, /screen\.getDisplayMatching/);
-    assert.match(src, /workAreaSize/);
-    // Detecção de quadrante (1-4)
-    assert.match(src, /quad\s*=\s*\(?relY/);
-    assert.match(src, /quad\s*=\s*\(?relX/);
-    // Fallback de cursor quando tray.getBounds retorna zeros (overflow)
-    assert.match(src, /screen\.getCursorScreenPoint\(\)/);
-    assert.match(src, /trayBoundsInvalid/);
-});
-
-test('TRAY-POPUP: BrowserWindow com paintWhenInitiallyHidden + warm-up (anti-flicker)', () => {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
-    assert.match(src, /paintWhenInitiallyHidden:\s*true/);
-    assert.match(src, /useContentSize:\s*true/);
-    assert.match(src, /backgroundThrottling:\s*false/);
-    // Warm-up dance: ready-to-show → setOpacity(0) → showInactive → hide
-    assert.match(src, /ready-to-show/);
-    assert.match(src, /setOpacity\(0\)/);
-    assert.match(src, /showInactive\(\)/);
-});
-
-test('TRAY-POPUP: showTrayPopup usa showInactive (não show direto)', () => {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
-    const fn = src.match(/function showTrayPopup[\s\S]*?(?=\nfunction\s|\n\/\/\s+──)/);
-    assert.ok(fn);
-    assert.match(fn[0], /showInactive\(\)/);
-    assert.match(fn[0], /positionTrayPopup\(\)/);
-});
-
-test('TRAY-POPUP: popup tem blur listener para hide on lose focus', () => {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
-    assert.match(src, /trayPopupWindow\.on\(['"]blur['"]/);
-});
-
-test('TRAY-POPUP: tema vem do nativeTheme do Electron (claro/escuro do Windows)', () => {
-    const main = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
-    // pushTrayState deve incluir `theme` baseado em nativeTheme.shouldUseDarkColors
-    assert.match(main, /theme:\s*nativeTheme\.shouldUseDarkColors\s*\?\s*['"]dark['"]\s*:\s*['"]light['"]/);
-    // nativeTheme.on('updated') deve chamar pushTrayState (não só updateTrayMenu)
-    const themeListener = main.match(/nativeTheme\.on\(['"]updated['"][\s\S]*?\}\)/);
-    assert.ok(themeListener);
-    assert.match(themeListener[0], /pushTrayState\(\)/);
-});
-
-test('TRAY-POPUP: tray-popup.js aplica .dark conforme state.theme recebido', () => {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'tray-popup.js'), 'utf8');
-    assert.match(src, /function applyTheme/);
-    assert.match(src, /applyTheme\(state\.theme\)/);
-    assert.match(src, /classList\.add\(['"]dark['"]\)/);
-    assert.match(src, /classList\.remove\(['"]dark['"]\)/);
-});
-
-test('TRAY-POPUP: anti-flash inicial via matchMedia (sem localStorage isolado)', () => {
-    const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'tray-popup.html'), 'utf8');
-    assert.match(html, /matchMedia\(['"]\(prefers-color-scheme:\s*dark\)['"]\)/);
-    // NÃO pode mais usar localStorage (sempre vazio em BrowserWindow isolada)
-    assert.doesNotMatch(html, /localStorage\.getItem\(['"]ontrack-agent-theme['"]\)/);
+    assert.match(src, /tray\.on\(['"]double-click['"]/);
 });
 
 test('UPDATE-UX: tray menu mostra opções baseadas em status (available/downloading/ready)', () => {
