@@ -665,17 +665,26 @@ function updateTrayMenu() {
     const prnStatus = (agentState.printerStatus || '').toUpperCase();
     const prnName = (agentState.printerName || '');
 
+    // Usa includes() porque os valores reais são strings compostas:
+    //  sysStatus pode ser "SUBSCRIBED", "CONNECTING", "ONLINE", "DISCONNECTED"...
+    //  prnStatus vem do state.printerStatus.message: "Online e Pronta",
+    //    "Imprimindo...", "Offline (Pausada/Cabo)", "Aguardando", "Não encontrada".
     let sysIcon = 'status-off.png';
     if (sysStatus.includes('INICIANDO') || sysStatus.includes('CONNECTING') || sysStatus === '...') {
         sysIcon = `wait-${themeSuffix}.png`;
-    } else if (sysStatus === 'ONLINE' || sysStatus === 'SUBSCRIBED' || sysStatus === 'CONNECTED') {
+    } else if (sysStatus.includes('ONLINE') || sysStatus.includes('SUBSCRIBED') || sysStatus.includes('CONNECTED')) {
         sysIcon = 'status-on.png';
     }
 
     let prnIcon = 'status-off.png';
-    if (prnStatus === '...' || prnStatus === 'DETECTANDO...' || prnName === 'Detectando...') {
+    if (prnStatus === '...' || prnStatus.includes('DETECTANDO') || prnStatus.includes('AGUARDANDO') || prnName === 'Detectando...') {
         prnIcon = `wait-${themeSuffix}.png`;
-    } else if (prnStatus === 'PRONTA' || prnStatus === 'ONLINE' || prnStatus === 'IDLE') {
+    } else if (
+        prnStatus.includes('ONLINE') ||
+        prnStatus.includes('PRONTA') ||
+        prnStatus.includes('IMPRIMINDO') ||
+        prnStatus.includes('IDLE')
+    ) {
         prnIcon = 'status-on.png';
     }
 
@@ -756,6 +765,7 @@ function updateTrayMenu() {
         { type: 'separator' },
         {
             label: checkLabel,
+            icon: getIcon(`refresh-ccw-dot-${themeSuffix}.png`),
             enabled: checkEnabled,
             click: () => { actionCheckForUpdates(); },
         },

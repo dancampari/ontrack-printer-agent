@@ -144,12 +144,12 @@ test('REGRESSÃO: fixQueue tem try/catch ao redor de operações de spooler', ()
 
 test('REGRESSÃO: package.json está em 3.7.2', () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
-    assert.equal(pkg.version, '3.7.3');
+    assert.equal(pkg.version, '3.7.5');
 });
 
 test('REGRESSÃO: controllers.js reporta version 3.7.2 em /api/health', () => {
     const src = root('api/controllers.js');
-    assert.match(src, /version:\s*['"]3\.7\.3['"]/);
+    assert.match(src, /version:\s*['"]3\.7\.5['"]/);
 });
 
 // ── UX profissional de update (v3.7.2+) ──────────────────────────────────────
@@ -268,6 +268,29 @@ test('UPDATE-UX: tray menu sem emojis nos labels (UI profissional)', () => {
     // Procura por emojis específicos que estavam em labels (🆕 ⬇️ ✅ 🔄 ⏭️ ⚠️)
     const emojisInTrayLabels = /label:\s*[`'"][^'"`]*(🆕|⬇️|✅|🔄|⏭️|⚠️)[^'"`]*[`'"]/;
     assert.doesNotMatch(src, emojisInTrayLabels, 'labels do tray não podem ter emojis');
+});
+
+test('UI-LIMPA: tray prnIcon usa includes (não === exato) para casar status compostos', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+    // O state.printerStatus.message vem como "Online e Pronta", "Imprimindo...", etc.
+    // Comparação `=== 'ONLINE'` falhava porque o valor real era "ONLINE E PRONTA".
+    // Garantimos que a lógica usa includes('ONLINE'), includes('PRONTA') etc.
+    const trayBlock = src.match(/let prnIcon[\s\S]*?prnIcon\s*=\s*['"]status-on\.png['"]/);
+    assert.ok(trayBlock, 'bloco do prnIcon precisa ser localizável');
+    assert.match(trayBlock[0], /prnStatus\.includes\(['"]ONLINE['"]\)/);
+    assert.match(trayBlock[0], /prnStatus\.includes\(['"]PRONTA['"]\)/);
+    // NÃO pode mais ter `=== 'ONLINE'` ou `=== 'PRONTA'`
+    assert.doesNotMatch(trayBlock[0], /prnStatus\s*===\s*['"]ONLINE['"]/);
+    assert.doesNotMatch(trayBlock[0], /prnStatus\s*===\s*['"]PRONTA['"]/);
+});
+
+test('UPDATE-UX: item "Verificar atualizações" tem ícone refresh-ccw-dot (light/dark)', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+    assert.match(src, /icon:\s*getIcon\(`refresh-ccw-dot-\$\{themeSuffix\}\.png`\)/);
+    // Arquivos físicos precisam existir
+    const publicDir = path.join(__dirname, '..', 'public');
+    assert.ok(fs.existsSync(path.join(publicDir, 'refresh-ccw-dot-light.png')), 'refresh-ccw-dot-light.png ausente');
+    assert.ok(fs.existsSync(path.join(publicDir, 'refresh-ccw-dot-dark.png')), 'refresh-ccw-dot-dark.png ausente');
 });
 
 test('UPDATE-UX: main.js rastreia lastCheckedAt nas transições', () => {
