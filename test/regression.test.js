@@ -144,12 +144,12 @@ test('REGRESSÃO: fixQueue tem try/catch ao redor de operações de spooler', ()
 
 test('REGRESSÃO: package.json está em 3.7.2', () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
-    assert.equal(pkg.version, '3.7.2');
+    assert.equal(pkg.version, '3.7.3');
 });
 
 test('REGRESSÃO: controllers.js reporta version 3.7.2 em /api/health', () => {
     const src = root('api/controllers.js');
-    assert.match(src, /version:\s*['"]3\.7\.2['"]/);
+    assert.match(src, /version:\s*['"]3\.7\.3['"]/);
 });
 
 // ── UX profissional de update (v3.7.2+) ──────────────────────────────────────
@@ -221,66 +221,82 @@ test('UPDATE-UX: server.js registra rotas REST de update', () => {
     assert.match(src, /app\.post\(['"]\/api\/update\/skip['"],\s*Controllers\.updateSkip\)/);
 });
 
-test('UPDATE-UX: public/index.html tem updateBanner com 4 estados (available/downloading/ready/error)', () => {
+test('UPDATE-UX: public/index.html tem updateModal (não banner permanente)', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
-    assert.match(src, /id="updateBanner"/);
-    assert.match(src, /id="updateBannerActions"/);
-    assert.match(src, /\.update-banner\.ready/);
-    assert.match(src, /\.update-banner\.downloading/);
-    assert.match(src, /\.update-banner\.error/);
+    assert.match(src, /id="updateModal"/);
+    assert.match(src, /id="updateModalActions"/);
+    // NÃO deve existir mais banner permanente no header
+    assert.doesNotMatch(src, /id="updateBanner"/);
 });
 
-test('UPDATE-UX: dashboard.js faz polling de /api/update e renderiza banner', () => {
+test('UPDATE-UX: dashboard.js usa modal (não banner) e respeita dispensa', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'dashboard.js'), 'utf8');
     assert.match(src, /pollUpdateStatus/);
-    assert.match(src, /renderUpdateBanner/);
-    assert.match(src, /function updateAction/);
-    assert.match(src, /\/api\/update\//);
+    assert.match(src, /maybeShowUpdateModal/);
+    assert.match(src, /renderUpdateModal/);
+    assert.match(src, /function dismissUpdateModal/);
+    assert.match(src, /function skipUpdateVersion/);
+    // NÃO deve mais ter banner permanente
+    assert.doesNotMatch(src, /renderUpdateBanner/);
+    assert.doesNotMatch(src, /updateBanner/);
+});
+
+test('UPDATE-UX: modal tem 3 ações para "available" (lembrar/não exibir/baixar)', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'dashboard.js'), 'utf8');
+    assert.match(src, /Lembrar depois/);
+    assert.match(src, /Não exibir mais este aviso/);
+    assert.match(src, /Baixar agora/);
 });
 
 test('UPDATE-UX: tray menu mostra opções baseadas em status (available/downloading/ready)', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
-    assert.match(src, /Nova versão.*disponível/);
+    assert.match(src, /Atualização disponível: v/);
     assert.match(src, /Baixar agora/);
     assert.match(src, /Pular esta versão/);
     assert.match(src, /Instalar e reiniciar/);
 });
 
-// ── Sempre acessível (v3.7.2+) ───────────────────────────────────────────────
-test('UPDATE-UX: tray SEMPRE tem "Verificar atualizações" (mesmo em idle)', () => {
+// ── UI limpa: modal em vez de banner permanente (v3.7.3+) ────────────────────
+test('UPDATE-UX: tray tem "Verificar atualizações" (única fonte manual)', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
-    // Item permanente é adicionado fora do bloco if/else if dos status
+    assert.match(src, /label:\s*checkLabel/);
     assert.match(src, /Verificar atualizações/);
-    assert.match(src, /OnTrack Agent v.*currentVersion/);
+});
+
+test('UPDATE-UX: tray menu sem emojis nos labels (UI profissional)', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+    // Procura por emojis específicos que estavam em labels (🆕 ⬇️ ✅ 🔄 ⏭️ ⚠️)
+    const emojisInTrayLabels = /label:\s*[`'"][^'"`]*(🆕|⬇️|✅|🔄|⏭️|⚠️)[^'"`]*[`'"]/;
+    assert.doesNotMatch(src, emojisInTrayLabels, 'labels do tray não podem ter emojis');
 });
 
 test('UPDATE-UX: main.js rastreia lastCheckedAt nas transições', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
-    assert.match(src, /lastCheckedAt:\s*null/, 'inicializa null');
-    // Pelo menos 3 atribuições (available, not-available, error)
+    assert.match(src, /lastCheckedAt:\s*null/);
     const updates = (src.match(/updateState\.lastCheckedAt\s*=\s*new Date\(\)\.toISOString\(\)/g) || []).length;
     assert.ok(updates >= 3, `esperado ≥3 atualizações de lastCheckedAt, achei ${updates}`);
 });
 
-test('UPDATE-UX: banner sempre visível (sem display:none quando idle)', () => {
+test('UI-LIMPA: dashboard.js usa modal para update (não banner permanente)', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'dashboard.js'), 'utf8');
-    // O renderUpdateBanner antigo escondia o banner em idle. Novo SEMPRE mostra.
-    assert.match(src, /banner\.style\.display\s*=\s*['"]flex['"]/);
-    // Estado idle deve renderizar card compacto com botão "Verificar atualizações"
-    assert.match(src, /classList\.add\(['"]idle['"]/);
-    assert.match(src, /Verificar atualizações/);
+    assert.match(src, /maybeShowUpdateModal/);
+    assert.doesNotMatch(src, /update-banner/);
 });
 
-test('UPDATE-UX: banner cobre estado checking + skipped (além dos 4 originais)', () => {
+test('UI-LIMPA: ícone WiFi vermelho removido (check_circle no caminho checkDoctor)', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'dashboard.js'), 'utf8');
-    assert.match(src, /status === ['"]checking['"]/);
-    assert.match(src, /status === ['"]skipped['"]/);
+    // No bloco checkDoctor, o ícone ONLINE deve ser check_circle (não wifi)
+    const checkDoctorBlock = src.match(/async function checkDoctor[\s\S]*?^}/m);
+    assert.ok(checkDoctorBlock);
+    // ícone wifi (sem _off) não pode aparecer no bloco ONLINE
+    assert.doesNotMatch(checkDoctorBlock[0], />wifi</);
 });
 
-test('UPDATE-UX: dashboard.js formata "última verificação" de forma relativa', () => {
+test('UI-LIMPA: dashboard.js usa sessionStorage para "dispensar nesta sessão"', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'dashboard.js'), 'utf8');
-    assert.match(src, /function formatRelativeTime/);
-    assert.match(src, /lastCheckedAt/);
+    assert.match(src, /sessionStorage/);
+    assert.match(src, /getDismissedSession/);
+    assert.match(src, /setDismissedSession/);
 });
 
 // ── Auto-update (v3.7.0+) ────────────────────────────────────────────────────

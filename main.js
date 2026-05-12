@@ -682,124 +682,113 @@ function updateTrayMenu() {
     const overallStatus = (sysIcon === 'status-on.png' && prnIcon === 'status-on.png') ? 'Operacional' : 'Aguardando/Atenção';
     tray.setToolTip(`OnTrack Agent: ${overallStatus}\nSistema: ${agentState.status}\nImpressora: ${agentState.printerStatus}`);
 
-    // ── Itens de update dinâmicos ───────────────────────────────────────
-    // Política: SEMPRE expor "Verificar atualizações" + a versão atual,
-    // mesmo quando não há nada novo. Quando há, mostra ações contextuais
-    // antes do item permanente.
-    const updateMenuItems = [];
+    // ── Itens de update contextuais ─────────────────────────────────────
+    // Mostrados apenas quando há ação útil. Sem emojis — só texto limpo.
+    // "Verificar atualizações" fica na seção de ações abaixo, sempre acessível.
+    const updateContextItems = [];
     if (updateState.status === 'available' && updateState.info) {
-        updateMenuItems.push({
-            label: `🆕 Nova versão ${updateState.info.version} disponível`,
+        updateContextItems.push({
+            label: `Atualização disponível: v${updateState.info.version}`,
             enabled: false,
         });
-        updateMenuItems.push({
-            label: '⬇️ Baixar agora',
+        updateContextItems.push({
+            label: 'Baixar agora',
             click: () => { actionStartDownload(); },
         });
-        updateMenuItems.push({
-            label: '⏭️ Pular esta versão',
+        updateContextItems.push({
+            label: 'Pular esta versão',
             click: () => { actionSkipVersion(updateState.info.version); },
         });
-        updateMenuItems.push({ type: 'separator' });
+        updateContextItems.push({ type: 'separator' });
     } else if (updateState.status === 'downloading' && updateState.info) {
-        updateMenuItems.push({
-            label: `⬇️ Baixando ${updateState.info.version}... (${updateState.downloadProgress}%)`,
+        updateContextItems.push({
+            label: `Baixando v${updateState.info.version} (${updateState.downloadProgress}%)`,
             enabled: false,
         });
-        updateMenuItems.push({ type: 'separator' });
+        updateContextItems.push({ type: 'separator' });
     } else if (updateState.status === 'ready' && updateState.info) {
-        updateMenuItems.push({
-            label: `✅ ${updateState.info.version} pronta para instalar`,
+        updateContextItems.push({
+            label: `Versão v${updateState.info.version} pronta para instalar`,
             enabled: false,
         });
-        updateMenuItems.push({
-            label: '🔄 Instalar e reiniciar agora',
+        updateContextItems.push({
+            label: 'Instalar e reiniciar agora',
             click: () => { actionInstallNow(); },
         });
-        updateMenuItems.push({
-            label: '⏭️ Pular esta versão',
+        updateContextItems.push({
+            label: 'Pular esta versão',
             click: () => { actionSkipVersion(updateState.info.version); },
         });
-        updateMenuItems.push({ type: 'separator' });
-    } else if (updateState.status === 'error') {
-        updateMenuItems.push({
-            label: `⚠️ Erro: ${(updateState.error || 'desconhecido').slice(0, 50)}`,
-            enabled: false,
-        });
-        updateMenuItems.push({ type: 'separator' });
-    } else if (updateState.status === 'skipped' && updateState.info) {
-        updateMenuItems.push({
-            label: `⏭️ ${updateState.info.version} pulada`,
-            enabled: false,
-        });
-        updateMenuItems.push({ type: 'separator' });
+        updateContextItems.push({ type: 'separator' });
     }
-    // Item PERMANENTE — mostra versão e permite verificação manual.
-    updateMenuItems.push({
-        label: `OnTrack Agent v${updateState.currentVersion}`,
-        enabled: false,
-    });
-    updateMenuItems.push({
-        label: updateState.status === 'checking' ? 'Verificando...' : '🔄 Verificar atualizações',
-        enabled: app.isPackaged && updateState.status !== 'checking' && updateState.status !== 'downloading',
-        click: () => { actionCheckForUpdates(); },
-    });
-    updateMenuItems.push({ type: 'separator' });
+
+    const checkLabel =
+        updateState.status === 'checking' ? 'Verificando atualizações...' :
+        updateState.status === 'downloading' ? 'Aguarde o download...' :
+        'Verificar atualizações';
+    const checkEnabled = app.isPackaged
+        && updateState.status !== 'checking'
+        && updateState.status !== 'downloading';
 
     const contextMenu = Menu.buildFromTemplate([
         {
-            label: 'OnTrack Agent',
+            label: `OnTrack Agent v${updateState.currentVersion}`,
             icon: getIcon('icon.png'),
-            enabled: false
+            enabled: false,
         },
         { type: 'separator' },
-        ...updateMenuItems,
+        ...updateContextItems,
         {
             label: `Sistema: ${agentState.status}`,
             icon: getIcon(sysIcon),
-            enabled: false
+            enabled: false,
         },
         {
             label: `Impressora: ${agentState.printerName}`,
             icon: getIcon(prnIcon),
-            enabled: false
+            enabled: false,
         },
         {
             label: `Status: ${agentState.printerStatus}`,
             icon: getIcon(prnIcon),
-            enabled: false
+            enabled: false,
         },
         { type: 'separator' },
+        {
+            label: checkLabel,
+            enabled: checkEnabled,
+            click: () => { actionCheckForUpdates(); },
+        },
         {
             label: 'Corrigir Fila de Impressão',
             icon: getIcon(`action-clean-${themeSuffix}.png`),
             click: () => {
                 if (agentProcess) agentProcess.send({ type: 'FORCE_CLEAR_QUEUE' });
                 tray.displayBalloon({ title: 'Manutenção', content: 'Limpando spooler...' });
-            }
+            },
         },
         {
-            label: 'Teste de Impressão',
+            label: 'Imprimir Página de Teste',
             icon: getIcon(`printer-${themeSuffix}.png`),
             click: () => {
                 if (agentProcess) agentProcess.send({ type: 'RUN_TEST_PRINT' });
-            }
+            },
         },
         {
             label: 'Abrir Painel de Controle',
             icon: getIcon(`action-settings-${themeSuffix}.png`),
-            click: () => mainWindow.show()
+            click: () => mainWindow.show(),
         },
         { type: 'separator' },
         {
-            label: 'Sair / Encerrar',
+            label: 'Sair',
             icon: getIcon(`action-exit-${themeSuffix}.png`),
             click: () => {
                 app.isQuitting = true;
                 if (agentProcess) agentProcess.kill();
                 app.quit();
-            }
-        }
+            },
+        },
     ]);
 
     tray.setContextMenu(contextMenu);

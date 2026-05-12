@@ -854,11 +854,14 @@ async function checkDoctor(config) {
             let html = '<div style="margin-bottom:6px"><strong>' + escapeHtml(d.Name) + '</strong></div>';
             html += '<div style="font-size:0.9em; margin-bottom:4px">Fila: <strong>' + d.JobCount + '</strong> tarefas pendentes</div>';
 
-            // Status Line com Material Symbol
+            // Status Line — usa check_circle (online) ou cancel (offline) padronizado.
+            // Antes usava wifi/wifi_off, mas a fonte material-symbols às vezes
+            // demorava a carregar e o navegador caía no emoji fallback do sistema
+            // (📶 que renderiza vermelho em algumas configurações do Windows).
             if (isOffline) {
-                html += '<div style="display:flex; align-items:center; gap:6px; margin-top:4px; color:var(--error)"><span class="material-symbols-outlined" style="font-size:18px">wifi_off</span> OFFLINE</div>';
+                html += '<div style="display:flex; align-items:center; gap:6px; margin-top:4px; color:var(--error)"><span class="material-symbols-outlined" style="font-size:18px; color: var(--error);">cancel</span> OFFLINE</div>';
             } else {
-                html += '<div style="display:flex; align-items:center; gap:6px; margin-top:4px; color:var(--success)"><span class="material-symbols-outlined" style="font-size:18px">wifi</span> ONLINE</div>';
+                html += '<div style="display:flex; align-items:center; gap:6px; margin-top:4px; color:var(--success)"><span class="material-symbols-outlined" style="font-size:18px; color: var(--success);">check_circle</span> ONLINE</div>';
             }
 
             if (d.JobCount > 0 || isOffline) {
@@ -1023,10 +1026,23 @@ async function handleLogout() {
 }
 
 // ==================================================================================
-// AUTO-UPDATE BANNER
-// O usuário escolhe quando baixar, quando instalar, ou pular a versão.
-// Banner consulta /api/update a cada 5s e renderiza o estado atual.
+// AUTO-UPDATE — MODAL
+// Mostra modal apenas quando há ação a tomar (available / ready / error).
+// "Verificar atualizações" é exclusivo do tray. UI principal fica limpa.
+// Modal pode ser fechado e tem "Não exibir mais este aviso" (pula versão).
 // ==================================================================================
+
+const DISMISSED_KEY = 'ontrack-agent-update-dismissed';
+
+function getDismissedSession() {
+    try { return JSON.parse(sessionStorage.getItem(DISMISSED_KEY) || '[]'); }
+    catch { return []; }
+}
+function setDismissedSession(version) {
+    const list = getDismissedSession();
+    if (!list.includes(version)) list.push(version);
+    sessionStorage.setItem(DISMISSED_KEY, JSON.stringify(list));
+}
 
 async function pollUpdateStatus() {
     try {
@@ -1034,38 +1050,69 @@ async function pollUpdateStatus() {
         if (!res.ok) return;
         const data = await res.json();
         lastUpdateState = data;
-        renderUpdateBanner(data);
+        maybeShowUpdateModal(data);
     } catch (e) {
         // silencioso — agent pode estar reiniciando
     }
 }
 
-function renderUpdateBanner(state) {
-    const banner = document.getElementById('updateBanner');
-    if (!banner) return;
+function maybeShowUpdateModal(state) {
+    const modal = document.getElementById('updateModal');
+    if (!modal) return;
 
-    // SEMPRE mostra o banner — é o ponto único de visibilidade do sistema
-    // de atualizações no painel. Em idle vira um card discreto com versão
-    // atual + botão "Verificar atualizações".
-    banner.style.display = 'flex';
-    banner.classList.remove('ready', 'downloading', 'error', 'idle', 'checking');
+    const status = state && state.status;
+    const v = state && state.version;
+    const cur = state && state.currentVersion;
+    const hasNew = v && cur && v !== cur;
 
-    const status = (state && state.status) || 'idle';
-    const titleEl = document.getElementById('updateBannerTitle');
-    const subtitleEl = document.getElementById('updateBannerSubtitle');
-    const iconEl = document.getElementById('updateBannerIcon').querySelector('.material-symbols-outlined');
-    const changelogEl = document.getElementById('updateBannerChangelog');
-    const notesEl = document.getElementById('updateBannerNotes');
-    const progressEl = document.getElementById('updateBannerProgress');
-    const progressFillEl = document.getElementById('updateBannerProgressFill');
-    const progressLabelEl = document.getElementById('updateBannerProgressLabel');
-    const actionsEl = document.getElementById('updateBannerActions');
+    // Estados que NÃO devem mostrar modal:
+    // - idle: nenhum update disponível
+    // - checking: aparecer modal piscando seria estranho
+    // - skipped: usuário já optou por pular via skip (persistido)
+    // - downloading sem visibilidade prévia: só mostra se já está aberto
+    // - error: silencioso (tray indica)
+    if (!status || status === 'idle' || status === 'checking' || status === 'skipped' || status === 'error' || !hasNew) {
+        if (modal.style.display !== 'none' && status !== 'downloading' && status !== 'ready') {
+            modal.style.display = 'none';
+        }
+        return;
+    }
+
+    // Modal já aberto e estamos em downloading/ready: atualiza progresso
+    if (modal.style.display === 'flex') {
+        renderUpdateModal(state);
+        return;
+    }
+
+    // Available: só mostra se NÃO foi dispensado nesta sessão
+    if (status === 'available') {
+        const dismissed = getDismissedSession();
+        if (dismissed.includes(v)) return;
+    }
+
+    renderUpdateModal(state);
+    modal.style.display = 'flex';
+}
+
+function renderUpdateModal(state) {
+    const modal = document.getElementById('updateModal');
+    if (!modal) return;
+
+    const status = state && state.status;
+    const titleEl = document.getElementById('updateModalTitle');
+    const subtitleEl = document.getElementById('updateModalSubtitle');
+    const iconEl = document.getElementById('updateModalIcon');
+    const changelogEl = document.getElementById('updateModalChangelog');
+    const notesEl = document.getElementById('updateModalNotes');
+    const progressEl = document.getElementById('updateModalProgress');
+    const progressFillEl = document.getElementById('updateModalProgressFill');
+    const progressLabelEl = document.getElementById('updateModalProgressLabel');
+    const actionsEl = document.getElementById('updateModalActions');
 
     const v = state && state.version;
     const cur = (state && state.currentVersion) || '—';
-    const lastChecked = state && state.lastCheckedAt ? formatRelativeTime(state.lastCheckedAt) : 'nunca';
 
-    // Changelog (release notes do GitHub) — só mostra se tem conteúdo
+    // Changelog (release notes do GitHub)
     if (state && state.releaseNotes && String(state.releaseNotes).trim()) {
         changelogEl.style.display = '';
         notesEl.textContent = stripHtml(String(state.releaseNotes));
@@ -1075,73 +1122,55 @@ function renderUpdateBanner(state) {
 
     progressEl.style.display = 'none';
 
-    if (status === 'available' && v && v !== cur) {
+    if (status === 'available' && v) {
         iconEl.textContent = 'system_update';
         titleEl.textContent = `Nova versão ${v} disponível`;
-        subtitleEl.textContent = `Você está usando ${cur}. Esta atualização traz melhorias e correções.`;
+        subtitleEl.textContent = `Você está usando ${cur}. Deseja atualizar agora?`;
         actionsEl.innerHTML = `
-            <button class="ub-btn ub-btn-primary" onclick="updateAction('download')">
-                <span class="material-symbols-outlined">download</span>Baixar agora
-            </button>
-            <button class="ub-btn ub-btn-ghost" onclick="updateAction('skip','${escapeAttr(v)}')">
-                Pular esta versão
-            </button>`;
+            <button type="button" class="btn-cancel" onclick="dismissUpdateModal()">Lembrar depois</button>
+            <button type="button" class="btn-cancel" onclick="skipUpdateVersion('${escapeAttr(v)}')">Não exibir mais este aviso</button>
+            <button type="button" class="btn-confirm" onclick="updateAction('download')">Baixar agora</button>`;
     } else if (status === 'downloading' && v) {
-        banner.classList.add('downloading');
         iconEl.textContent = 'downloading';
         titleEl.textContent = `Baixando ${v}...`;
-        subtitleEl.textContent = `Você pode continuar usando o agent normalmente.`;
+        subtitleEl.textContent = `Você pode continuar usando o agent normalmente. A instalação só acontece quando você decidir.`;
         progressEl.style.display = '';
         const pct = state.progress || 0;
         progressFillEl.style.width = pct + '%';
         progressLabelEl.textContent = pct + '%';
-        actionsEl.innerHTML = `<button class="ub-btn ub-btn-ghost" disabled>Aguarde...</button>`;
+        actionsEl.innerHTML = `<button type="button" class="btn-cancel" onclick="dismissUpdateModal()">Minimizar</button>`;
     } else if (status === 'ready' && v) {
-        banner.classList.add('ready');
         iconEl.textContent = 'task_alt';
         titleEl.textContent = `Versão ${v} pronta para instalar`;
-        subtitleEl.textContent = `Instalar agora reinicia o agent (impressões em andamento são preservadas na fila).`;
+        subtitleEl.textContent = `Instalar agora reinicia o agent. Impressões pendentes na fila são preservadas.`;
         actionsEl.innerHTML = `
-            <button class="ub-btn ub-btn-success" onclick="updateAction('install')">
-                <span class="material-symbols-outlined">restart_alt</span>Instalar e reiniciar
-            </button>
-            <button class="ub-btn ub-btn-ghost" onclick="updateAction('skip','${escapeAttr(v)}')">
-                Pular esta versão
-            </button>`;
-    } else if (status === 'error') {
-        banner.classList.add('error');
-        iconEl.textContent = 'error';
-        titleEl.textContent = 'Falha ao verificar atualização';
-        subtitleEl.textContent = (state && state.error) || 'Verifique sua conexão e tente novamente.';
-        actionsEl.innerHTML = `
-            <button class="ub-btn ub-btn-primary" onclick="updateAction('check')">
-                <span class="material-symbols-outlined">refresh</span>Tentar novamente
-            </button>`;
-    } else if (status === 'checking') {
-        banner.classList.add('idle', 'checking');
-        iconEl.textContent = 'sync';
-        titleEl.textContent = `Verificando atualizações...`;
-        subtitleEl.textContent = `Consultando GitHub Releases.`;
-        actionsEl.innerHTML = `<button class="ub-btn ub-btn-ghost" disabled>Aguarde...</button>`;
-    } else if (status === 'skipped' && v) {
-        banner.classList.add('idle');
-        iconEl.textContent = 'skip_next';
-        titleEl.textContent = `Versão atual: ${cur}`;
-        subtitleEl.textContent = `Versão ${v} pulada por você. Última verificação: ${lastChecked}.`;
-        actionsEl.innerHTML = `
-            <button class="ub-btn ub-btn-primary" onclick="updateAction('check')">
-                <span class="material-symbols-outlined">refresh</span>Verificar atualizações
-            </button>`;
-    } else {
-        // idle (sem update disponível) — card compacto e calmo
-        banner.classList.add('idle');
-        iconEl.textContent = 'check_circle';
-        titleEl.textContent = `Versão atual: ${cur}`;
-        subtitleEl.textContent = `Você está com a versão mais recente. Última verificação: ${lastChecked}.`;
-        actionsEl.innerHTML = `
-            <button class="ub-btn ub-btn-primary" onclick="updateAction('check')">
-                <span class="material-symbols-outlined">refresh</span>Verificar atualizações
-            </button>`;
+            <button type="button" class="btn-cancel" onclick="dismissUpdateModal()">Mais tarde</button>
+            <button type="button" class="btn-confirm" onclick="updateAction('install')">Instalar e reiniciar</button>`;
+    }
+}
+
+function dismissUpdateModal() {
+    const modal = document.getElementById('updateModal');
+    if (modal) modal.style.display = 'none';
+    // Marca como dispensado na sessão atual — não reaparece até reload ou nova versão
+    if (lastUpdateState && lastUpdateState.version && lastUpdateState.status === 'available') {
+        setDismissedSession(lastUpdateState.version);
+    }
+}
+
+async function skipUpdateVersion(version) {
+    try {
+        await fetch('/api/update/skip', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ version }),
+        });
+        showToast('Versão pulada', 'Você não será notificado sobre a versão ' + version + ' novamente.', 'info');
+        const modal = document.getElementById('updateModal');
+        if (modal) modal.style.display = 'none';
+        setTimeout(pollUpdateStatus, 400);
+    } catch (e) {
+        showToast('Erro', 'Falha ao registrar opção.', 'error');
     }
 }
 
@@ -1158,22 +1187,14 @@ function formatRelativeTime(iso) {
     return new Date(iso).toLocaleString('pt-BR');
 }
 
-async function updateAction(action, version) {
+async function updateAction(action) {
     const endpoint = '/api/update/' + action;
-    const body = action === 'skip' ? JSON.stringify({ version }) : undefined;
     try {
-        const res = await fetch(endpoint, {
-            method: 'POST',
-            headers: body ? { 'Content-Type': 'application/json' } : {},
-            body
-        });
+        const res = await fetch(endpoint, { method: 'POST' });
         const data = await res.json();
         if (data.ok) {
-            if (action === 'download') showToast('Download iniciado', 'Acompanhe o progresso no banner.', 'info');
+            if (action === 'download') showToast('Download iniciado', 'Acompanhe o progresso no modal.', 'info');
             if (action === 'install') showToast('Reiniciando', 'O agent será atualizado agora...', 'success');
-            if (action === 'skip') showToast('Versão pulada', 'Você não será notificado sobre esta versão novamente.', 'info');
-            if (action === 'check') showToast('Verificando', 'Consultando GitHub Releases...', 'info');
-            // força refresh imediato do estado
             setTimeout(pollUpdateStatus, 400);
         } else {
             showToast('Erro', data.error || `Falha na ação: ${action}`, 'error');
