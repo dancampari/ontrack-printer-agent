@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OnTrack — Recibo de Teste</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        @page {
+            margin: 0;
+        }
+
+        body {
+            font-family: 'Courier New', Courier, monospace;
+            background: white;
+            color: black;
+            width: 100%;
+            margin: 0;
+            padding: 0;
+            font-size: 11px;
+            line-height: 1.4;
+            overflow: hidden;
+        }
+
+        .receipt {
+            width: 100%;
+            padding: 8px 12px;
+            /* Margem de segurança nas laterais e avanço de guilhotina no fundo */
+            padding-bottom: 20mm;
+            box-sizing: border-box;
+        }
+
+        .header {
+            text-align: center;
+            font-size: 15px;
+            font-weight: bold;
+            letter-spacing: 1px;
+            margin-bottom: 2px;
+        }
+
+        .sub {
+            text-align: center;
+            font-size: 9px;
+            color: #555;
+            margin-bottom: 4px;
+        }
+
+        .divider {
+            border: none;
+            border-top: 1px dashed #000;
+            margin: 4px 0;
+        }
+
+        .title-block {
+            text-align: center;
+            font-weight: bold;
+            font-size: 12px;
+            margin: 4px 0;
+        }
+
+        .label {
+            font-size: 9px;
+            text-transform: uppercase;
+            color: #555;
+        }
+
+        .value {
+            font-weight: bold;
+            font-size: 11px;
+            margin-bottom: 4px;
+        }
+
+        .row {
+            display: flex;
+            justify-content: space-between;
+            margin: 2px 0;
+        }
+
+        .row.total {
+            font-weight: bold;
+            font-size: 12px;
+            border-top: 1px solid #000;
+            padding-top: 3px;
+            margin-top: 3px;
+        }
+
+        .row.credit {
+            color: #1a7a3c;
+        }
+
+        .row.debit {
+            color: #8b0000;
+        }
+
+        .signature {
+            text-align: center;
+            margin-top: 6px;
+            font-size: 10px;
+        }
+
+        .signature .line {
+            border-bottom: 1px solid #000;
+            margin: 14px 16px 2px;
+        }
+
+        .footer {
+            text-align: center;
+            font-size: 9px;
+            color: #666;
+            margin-top: 6px;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="receipt">
+        <p class="header">OnTrack</p>
+        <p class="sub">Sistema de Gestão de Funcionários</p>
+
+        <hr class="divider">
+        <p class="title-block">*** IMPRESSÃO DE TESTE ***</p>
+        <hr class="divider">
+
+        <p class="label">Empresa</p>
+        <p class="value" id="company-name">ONTRACK EMPRESA</p>
+
+        <hr class="divider">
+
+        <p class="label">Recibo de Pagamento</p>
+        <p class="value">João da Silva</p>
+        <p style="font-size:10px;">Período: 01/03/2026 a 07/03/2026</p>
+
+        <hr class="divider">
+
+        <div class="row credit">
+            <span>Salário base</span>
+            <span>R$ 1.518,00</span>
+        </div>
+        <div class="row credit">
+            <span>Horas extras (8h)</span>
+            <span>R$ 113,85</span>
+        </div>
+        <div class="row debit">
+            <span>Adiantamento</span>
+            <span>- R$ 200,00</span>
+        </div>
+        <div class="row total">
+            <span>TOTAL LÍQUIDO</span>
+            <span>R$ 1.431,85</span>
+        </div>
+
+        <hr class="divider">
+
+        <div class="signature">
+            <div class="line"></div>
+            <p>Assinatura do Funcionário</p>
+        </div>
+
+        <div class="footer">
+            <p id="print-date"></p>
+            <p style="margin-top:2px;">OnTrack — Agente de Impressão v3.7.0</p>
+        </div>
+    </div>
+
+    <script>
+        function pad(n) { return String(n).padStart(2, '0'); }
+        const now = new Date();
+        const dateStr = `${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+        document.getElementById('print-date').textContent = `Impresso em: ${dateStr}`;
+
+        const params = new URLSearchParams(window.location.search);
+        const company = params.get('company');
+        if (company) document.getElementById('company-name').textContent = company.toUpperCase().substring(0, 32);
+    </script>
+</body>
+
+</html>

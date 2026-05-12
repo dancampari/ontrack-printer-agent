@@ -1,0 +1,20 @@
+node_modules/
+data/
+dist/
+*.log
+*.exe
+LabelChefAgent.exe
+Output/
+
+# Build artifacts
+*.blockmap
+latest.yml
+
+# Local agent state (encrypted via Electron safeStorage — nunca versionar)
+session.secure
+credentials.secure
+
+# IDE
+.vscode/
+.idea/
+*.swp
