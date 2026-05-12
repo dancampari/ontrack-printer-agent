@@ -60,9 +60,9 @@
                     <div>
                         <h1>OnTrack Agent <span id="updateBadge" class="version-badge update-badge state-idle"
                                 role="button" tabindex="0"
-                                onclick="onUpdateBadgeClick()"
-                                onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();onUpdateBadgeClick();}"
-                                title="Verificar atualizações"><span id="updateBadgeLabel">v3.9.2</span></span></h1>
+                                onclick="onUpdateBadgeClick(event)"
+                                onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();onUpdateBadgeClick(event);}"
+                                title="Verificar atualizações"><span class="update-badge-dot" aria-hidden="true"></span><span id="updateBadgeLabel">v3.9.3</span></span></h1>
                         <p class="subtitle">Agente de Impressão</p>
                     </div>
                 </div>

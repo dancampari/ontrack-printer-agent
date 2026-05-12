@@ -82,7 +82,15 @@ function pushUpdateStateToAgent() {
 function actionCheckForUpdates() {
     if (!app.isPackaged) return Promise.resolve({ ok: false, error: 'Não disponível em modo dev.' });
     return autoUpdater.checkForUpdates()
-        .then((res) => ({ ok: true, hasUpdate: !!(res && res.updateInfo) }))
+        .then((res) => {
+            // BUG histórico: `res.updateInfo` é populado SEMPRE que o GitHub tem
+            // qualquer release (mesmo a atual), então `!!res.updateInfo` retorna
+            // true até quando estamos atualizados. Comparar versões de verdade.
+            const latest = res && res.updateInfo && res.updateInfo.version;
+            const current = app.getVersion();
+            const hasUpdate = !!(latest && current && latest !== current);
+            return { ok: true, hasUpdate, latest, current };
+        })
         .catch((err) => ({ ok: false, error: err && err.message }));
 }
 

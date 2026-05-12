@@ -201,16 +201,18 @@ body {
     font-weight: 500;
 }
 
-/* ── Update Badge (header) — herda .version-badge, só adiciona interatividade
-   e troca de cor de estado. Discreto por padrão: no estado idle parece um
-   simples version-badge clicável. Estados visíveis só quando há ação. */
+/* ── Update Badge (header) — herda .version-badge, adiciona dot indicador
+   colorido + interatividade. Dot SEMPRE visível: verde=atualizado, amarelo=
+   update disponível, azul=baixando, etc. Texto fica neutro, cor fica no dot. */
 .update-badge {
     cursor: pointer;
     user-select: none;
     transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
-    /* Forçar mesma métrica do version-badge mesmo com role=button */
     line-height: inherit;
     vertical-align: baseline;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
 }
 
 .update-badge:hover {
@@ -223,43 +225,86 @@ body {
     outline-offset: 1px;
 }
 
-/* idle = versão atual; visual idêntico ao .version-badge antigo */
-/* state-checking = sutil itálico em tom muted */
+/* Dot indicador — sempre visível, muda cor por estado */
+.update-badge-dot {
+    display: inline-block;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--muted-foreground);
+    flex-shrink: 0;
+    transition: background-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+/* state-idle = atualizado: dot VERDE forte (feedback claro de "tudo certo") */
+.update-badge.state-idle .update-badge-dot {
+    background: var(--success);
+    box-shadow: 0 0 0 2px color-mix(in hsl, var(--success) 18%, transparent);
+}
+
+/* state-checking = dot pulsando neutro */
 .update-badge.state-checking {
     font-style: italic;
 }
+.update-badge.state-checking .update-badge-dot {
+    background: var(--muted-foreground);
+    animation: update-dot-pulse 1s ease-in-out infinite;
+}
+@keyframes update-dot-pulse {
+    0%, 100% { opacity: 0.35; }
+    50%      { opacity: 1; }
+}
 
-/* state-available = chama atenção sem ser estridente: warning bg sutil */
+/* state-available = update disponível: dot AMARELO + bg sutil pra chamar atenção */
 .update-badge.state-available {
     color: var(--warning);
     background: var(--warning-bg);
     border-color: color-mix(in hsl, var(--warning) 30%, transparent);
 }
+.update-badge.state-available .update-badge-dot {
+    background: var(--warning);
+    box-shadow: 0 0 0 2px color-mix(in hsl, var(--warning) 22%, transparent);
+    animation: update-dot-pulse 1.5s ease-in-out infinite;
+}
 
-/* state-downloading = neutro com toque azul; sem barra interna pra não brigar com h1 */
+/* state-downloading = dot azul */
 .update-badge.state-downloading {
     color: var(--foreground);
     background: color-mix(in hsl, var(--primary, #2563eb) 10%, var(--muted));
     border-color: color-mix(in hsl, var(--primary, #2563eb) 30%, transparent);
 }
+.update-badge.state-downloading .update-badge-dot {
+    background: var(--primary, #2563eb);
+    box-shadow: 0 0 0 2px color-mix(in hsl, var(--primary, #2563eb) 22%, transparent);
+}
 
-/* state-ready = verde discreto, indica ação positiva pronta */
+/* state-ready = pronta pra instalar: dot verde forte com pulse */
 .update-badge.state-ready {
     color: var(--success);
     background: var(--success-bg);
     border-color: color-mix(in hsl, var(--success) 30%, transparent);
 }
+.update-badge.state-ready .update-badge-dot {
+    background: var(--success);
+    box-shadow: 0 0 0 2px color-mix(in hsl, var(--success) 30%, transparent);
+    animation: update-dot-pulse 1.5s ease-in-out infinite;
+}
 
-/* state-error = vermelho discreto */
+/* state-error = dot vermelho */
 .update-badge.state-error {
     color: var(--error);
     background: var(--error-bg);
     border-color: color-mix(in hsl, var(--error) 30%, transparent);
 }
+.update-badge.state-error .update-badge-dot {
+    background: var(--error);
+    box-shadow: 0 0 0 2px color-mix(in hsl, var(--error) 22%, transparent);
+}
 
-/* state-skipped = visualmente igual a idle, opacidade leve marca "ignorada" */
-.update-badge.state-skipped {
-    opacity: 0.8;
+/* state-skipped = dot cinza opaco */
+.update-badge.state-skipped .update-badge-dot {
+    background: var(--muted-foreground);
+    opacity: 0.6;
 }
 
 .subtitle {

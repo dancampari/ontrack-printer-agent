@@ -142,14 +142,14 @@ test('REGRESSÃO: fixQueue tem try/catch ao redor de operações de spooler', ()
     assert.ok(tryBlocks >= 3, `fixQueue deve ter ≥3 blocos try (achei ${tryBlocks})`);
 });
 
-test('REGRESSÃO: package.json está em 3.9.2', () => {
+test('REGRESSÃO: package.json está em 3.9.3', () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
-    assert.equal(pkg.version, '3.9.2');
+    assert.equal(pkg.version, '3.9.3');
 });
 
-test('REGRESSÃO: controllers.js reporta version 3.9.2 em /api/health', () => {
+test('REGRESSÃO: controllers.js reporta version 3.9.3 em /api/health', () => {
     const src = root('api/controllers.js');
-    assert.match(src, /version:\s*['"]3\.9\.2['"]/);
+    assert.match(src, /version:\s*['"]3\.9\.3['"]/);
 });
 
 // ── UX profissional de update (v3.7.2+) ──────────────────────────────────────
@@ -296,7 +296,7 @@ test('UPDATE-BADGE: index.html tem #updateBadge interativo no lugar da version-b
     const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
     assert.match(src, /id="updateBadge"/);
     assert.match(src, /id="updateBadgeLabel"/);
-    assert.match(src, /onclick="onUpdateBadgeClick\(\)"/);
+    assert.match(src, /onclick="onUpdateBadgeClick\(event\)"/);
 });
 
 test('UPDATE-BADGE: dashboard.js implementa renderUpdateBadge com os 7 estados', () => {
@@ -324,6 +324,34 @@ test('UPDATE-BADGE: click em estado available/ready/downloading abre o modal', (
     assert.match(fn[0], /renderUpdateModal/);
     // Em idle/error, dispara /api/update/check
     assert.match(fn[0], /\/api\/update\/check/);
+    // Toast IMEDIATO ao clicar — feedback antes do await (essencial para UX)
+    assert.match(fn[0], /Verificando atualizações/);
+    // Toast "tudo certo" quando não há update novo (fallback crítico)
+    assert.match(fn[0], /Tudo certo/);
+    // Modo teste via shift+click — permite testar o modal sem release real
+    assert.match(fn[0], /shiftKey/);
+});
+
+test('UPDATE-BADGE: actionCheckForUpdates compara versões (não usa só presença de updateInfo)', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+    const fn = src.match(/function\s+actionCheckForUpdates[\s\S]*?^}/m);
+    assert.ok(fn, 'actionCheckForUpdates precisa ser localizável');
+    // Bug histórico: `!!res.updateInfo` retorna true até para versão atual
+    assert.doesNotMatch(fn[0], /hasUpdate:\s*!!\s*\(\s*res\s*&&\s*res\.updateInfo\s*\)/);
+    // Fix: comparar latest com current
+    assert.match(fn[0], /res\.updateInfo\.version/);
+    assert.match(fn[0], /app\.getVersion\(\)/);
+    assert.match(fn[0], /latest\s*!==\s*current/);
+});
+
+test('UPDATE-BADGE: idle tem dot verde visível (confirmação "atualizado")', () => {
+    const css = fs.readFileSync(path.join(__dirname, '..', 'public', 'css', 'dashboard.css'), 'utf8');
+    // Dot existe como span dentro do badge
+    assert.match(css, /\.update-badge-dot\s*\{/);
+    // idle = success/verde (deve referenciar var --success no estado idle)
+    const idleRule = css.match(/\.update-badge\.state-idle\s+\.update-badge-dot[\s\S]*?\}/);
+    assert.ok(idleRule, 'CSS .update-badge.state-idle .update-badge-dot precisa existir');
+    assert.match(idleRule[0], /var\(--success\)/);
 });
 
 test('UPDATE-BADGE: CSS define os estados visíveis do badge', () => {

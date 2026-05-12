@@ -1106,7 +1106,7 @@ function renderUpdateBadge(state) {
     if (status === 'checking') {
         cls = 'state-checking';
         text = `v${cur}`;
-        title = 'Verificando atualizações no GitHub Releases…';
+        title = 'Verificando atualizações…';
     } else if (status === 'available' && hasNew) {
         cls = 'state-available';
         text = `v${v} disponível`;
@@ -1143,11 +1143,30 @@ function renderUpdateBadge(state) {
 }
 
 // Click no badge — comportamento depende do estado atual.
-async function onUpdateBadgeClick() {
+// Shift+Click em qualquer estado = modo teste: abre o modal com dados
+// fictícios pra você ver o fluxo sem precisar de um release real novo.
+async function onUpdateBadgeClick(event) {
+    // ─── Modo teste: shift+click ───
+    if (event && event.shiftKey) {
+        const cur = (lastUpdateState && lastUpdateState.currentVersion) || '—';
+        const fake = {
+            status: 'available',
+            version: cur === '—' ? '9.9.9' : `${cur}-teste`,
+            currentVersion: cur,
+            releaseNotes: 'ESTE É UM TESTE — nenhum download real será iniciado.\n\nEsse modal está sendo exibido para você verificar visualmente que o aviso de atualização aparece dentro do dashboard quando há uma nova versão. Em produção, o conteúdo mostra as notas reais da release.',
+            releaseName: 'Release de teste',
+        };
+        renderUpdateModal(fake);
+        const modal = document.getElementById('updateModal');
+        if (modal) modal.style.display = 'flex';
+        showToast('Modo teste', 'Modal exibido em modo de teste. Os botões NÃO disparam download real (a versão é fictícia).', 'info');
+        return;
+    }
+
     const state = lastUpdateState || {};
     const status = state.status;
 
-    // Estados com modal ativo: abre o modal direto (download/ready/available)
+    // Estados com ação pendente: abre o modal direto
     if (status === 'available' || status === 'downloading' || status === 'ready') {
         renderUpdateModal(state);
         const modal = document.getElementById('updateModal');
@@ -1155,18 +1174,23 @@ async function onUpdateBadgeClick() {
         return;
     }
 
-    // Demais estados: dispara checagem manual
+    // Demais estados (idle/error/skipped): checagem manual
+    // Toast IMEDIATO pra confirmar que o click foi registrado (antes do await).
+    showToast('Verificando atualizações', 'Consultando Releases…', 'info');
+    renderUpdateBadge({ ...state, status: 'checking' });
+
     try {
-        // Otimismo visual: mostra checking imediatamente
-        renderUpdateBadge({ ...state, status: 'checking' });
         const res = await fetch('/api/update/check', { method: 'POST' });
         const data = await res.json();
         if (!data.ok) {
             showToast('Verificação falhou', data.error || 'Não foi possível consultar atualizações.', 'error');
-        } else if (!data.hasUpdate) {
-            showToast('Tudo certo', 'Você já está na versão mais recente.', 'success');
+        } else if (data.hasUpdate) {
+            // Há update novo — polling em 400ms vai trazer status=available e abrir o modal
+            showToast('Atualização encontrada', `Nova versão ${data.latest || ''} disponível. Abrindo aviso…`, 'success');
+        } else {
+            // CONFIRMAÇÃO de "tudo certo" — fallback crítico, sem isso o usuário não sabe se algo aconteceu
+            showToast('Tudo certo', `Você já está na versão mais recente (${data.current || data.latest || ''}).`, 'success');
         }
-        // O polling natural vai pegar o novo estado em até 5s; força um refresh em 400ms
         setTimeout(pollUpdateStatus, 400);
     } catch (e) {
         showToast('Erro', 'Falha na comunicação com o agent.', 'error');
@@ -1228,7 +1252,7 @@ function renderUpdateModal(state) {
     const v = state && state.version;
     const cur = (state && state.currentVersion) || '—';
 
-    // Changelog (release notes do GitHub)
+    // Changelog (release notes)
     if (state && state.releaseNotes && String(state.releaseNotes).trim()) {
         changelogEl.style.display = '';
         notesEl.textContent = stripHtml(String(state.releaseNotes));
