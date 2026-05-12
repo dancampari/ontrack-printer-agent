@@ -105,7 +105,7 @@ global.requestHtmlPrint = requestHtmlPrint;
 
 async function bootstrap() {
     logger.init();
-    logger.info('MAIN', '=== ONTRACK AGENT v3.9.0 (Volta ao menu nativo do Windows estilo Docker) ===');
+    logger.info('MAIN', '=== ONTRACK AGENT v3.9.1 (Badge persistente de update no header do dashboard) ===');
 
     // 1. Inicializa Autenticação (Tenta carregar sessão do disco)
     const isAuthenticated = await auth.init();

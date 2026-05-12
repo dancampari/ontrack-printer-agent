@@ -142,14 +142,14 @@ test('REGRESSÃO: fixQueue tem try/catch ao redor de operações de spooler', ()
     assert.ok(tryBlocks >= 3, `fixQueue deve ter ≥3 blocos try (achei ${tryBlocks})`);
 });
 
-test('REGRESSÃO: package.json está em 3.9.0', () => {
+test('REGRESSÃO: package.json está em 3.9.1', () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
-    assert.equal(pkg.version, '3.9.0');
+    assert.equal(pkg.version, '3.9.1');
 });
 
-test('REGRESSÃO: controllers.js reporta version 3.9.0 em /api/health', () => {
+test('REGRESSÃO: controllers.js reporta version 3.9.1 em /api/health', () => {
     const src = root('api/controllers.js');
-    assert.match(src, /version:\s*['"]3\.9\.0['"]/);
+    assert.match(src, /version:\s*['"]3\.9\.1['"]/);
 });
 
 // ── UX profissional de update (v3.7.2+) ──────────────────────────────────────
