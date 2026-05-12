@@ -142,14 +142,14 @@ test('REGRESSÃO: fixQueue tem try/catch ao redor de operações de spooler', ()
     assert.ok(tryBlocks >= 3, `fixQueue deve ter ≥3 blocos try (achei ${tryBlocks})`);
 });
 
-test('REGRESSÃO: package.json está em 3.9.3', () => {
+test('REGRESSÃO: package.json está em 3.9.4', () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
-    assert.equal(pkg.version, '3.9.3');
+    assert.equal(pkg.version, '3.9.4');
 });
 
-test('REGRESSÃO: controllers.js reporta version 3.9.3 em /api/health', () => {
+test('REGRESSÃO: controllers.js reporta version 3.9.4 em /api/health', () => {
     const src = root('api/controllers.js');
-    assert.match(src, /version:\s*['"]3\.9\.3['"]/);
+    assert.match(src, /version:\s*['"]3\.9\.4['"]/);
 });
 
 // ── UX profissional de update (v3.7.2+) ──────────────────────────────────────
@@ -330,6 +330,23 @@ test('UPDATE-BADGE: click em estado available/ready/downloading abre o modal', (
     assert.match(fn[0], /Tudo certo/);
     // Modo teste via shift+click — permite testar o modal sem release real
     assert.match(fn[0], /shiftKey/);
+    // Modo teste ativa flag pra polling não fechar o modal
+    assert.match(fn[0], /testModeActive\s*=\s*true/);
+});
+
+test('UPDATE-BADGE: dashboard.js usa openUpdateModal/closeUpdateModal com classe .active', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'dashboard.js'), 'utf8');
+    // Helpers existem
+    assert.match(src, /function openUpdateModal/);
+    assert.match(src, /function closeUpdateModal/);
+    // openUpdateModal DEVE adicionar classe .active (senão modal fica invisível por CSS)
+    const openFn = src.match(/function openUpdateModal[\s\S]*?^}/m);
+    assert.ok(openFn, 'openUpdateModal precisa ser localizável');
+    assert.match(openFn[0], /classList\.add\(['"]active['"]\)/);
+    // closeUpdateModal DEVE remover .active e esperar transição CSS antes de display:none
+    const closeFn = src.match(/function closeUpdateModal[\s\S]*?^}/m);
+    assert.ok(closeFn, 'closeUpdateModal precisa ser localizável');
+    assert.match(closeFn[0], /classList\.remove\(['"]active['"]\)/);
 });
 
 test('UPDATE-BADGE: actionCheckForUpdates compara versões (não usa só presença de updateInfo)', () => {

@@ -1156,9 +1156,11 @@ async function onUpdateBadgeClick(event) {
             releaseNotes: 'ESTE É UM TESTE — nenhum download real será iniciado.\n\nEsse modal está sendo exibido para você verificar visualmente que o aviso de atualização aparece dentro do dashboard quando há uma nova versão. Em produção, o conteúdo mostra as notas reais da release.',
             releaseName: 'Release de teste',
         };
+        // Liga o modo teste ANTES de abrir — sem isso, o polling de 5s fecharia o modal
+        // ao ver que o estado real é idle (e a flag impede maybeShowUpdateModal de fechar).
+        testModeActive = true;
         renderUpdateModal(fake);
-        const modal = document.getElementById('updateModal');
-        if (modal) modal.style.display = 'flex';
+        openUpdateModal();
         showToast('Modo teste', 'Modal exibido em modo de teste. Os botões NÃO disparam download real (a versão é fictícia).', 'info');
         return;
     }
@@ -1169,8 +1171,7 @@ async function onUpdateBadgeClick(event) {
     // Estados com ação pendente: abre o modal direto
     if (status === 'available' || status === 'downloading' || status === 'ready') {
         renderUpdateModal(state);
-        const modal = document.getElementById('updateModal');
-        if (modal) modal.style.display = 'flex';
+        openUpdateModal();
         return;
     }
 
@@ -1198,9 +1199,39 @@ async function onUpdateBadgeClick(event) {
     }
 }
 
+// Helpers para abrir/fechar o update modal — replicam o padrão dos OUTROS
+// modais do dashboard. CRÍTICO: a .modal-overlay vem com `opacity: 0;
+// visibility: hidden` por padrão; só fica visível com a classe `.active`.
+// Por isso `display=flex` SOZINHO não mostra o modal — bug que explicava
+// porque o usuário só via o toast e nunca o modal.
+function openUpdateModal() {
+    const modal = document.getElementById('updateModal');
+    if (!modal) return;
+    modal.style.display = 'flex';
+    setTimeout(() => modal.classList.add('active'), 10);
+}
+function closeUpdateModal() {
+    const modal = document.getElementById('updateModal');
+    if (!modal) return;
+    modal.classList.remove('active');
+    // Aguarda a transição (0.2s) terminar antes de remover display
+    setTimeout(() => { modal.style.display = 'none'; }, 200);
+}
+function isUpdateModalOpen() {
+    const modal = document.getElementById('updateModal');
+    return !!(modal && modal.classList.contains('active'));
+}
+
+// Modo teste (shift+click) — impede que o polling automático feche o modal
+// porque o estado real é idle. Usuário fecha manualmente via botões/X.
+let testModeActive = false;
+
 function maybeShowUpdateModal(state) {
     const modal = document.getElementById('updateModal');
     if (!modal) return;
+
+    // Em modo teste, NÃO mexer no modal — usuário pediu pra ver, fica até ele fechar.
+    if (testModeActive) return;
 
     const status = state && state.status;
     const v = state && state.version;
@@ -1208,30 +1239,24 @@ function maybeShowUpdateModal(state) {
     const hasNew = v && cur && v !== cur;
 
     // Estados que NÃO devem mostrar modal:
-    // - idle: nenhum update disponível
-    // - checking: aparecer modal piscando seria estranho
-    // - skipped: usuário já optou por pular via skip (persistido)
-    // - downloading sem visibilidade prévia: só mostra se já está aberto
-    // - error: silencioso (tray indica)
     if (!status || status === 'idle' || status === 'checking' || status === 'skipped' || status === 'error' || !hasNew) {
-        if (modal.style.display !== 'none' && status !== 'downloading' && status !== 'ready') {
-            modal.style.display = 'none';
+        if (isUpdateModalOpen() && status !== 'downloading' && status !== 'ready') {
+            closeUpdateModal();
         }
         return;
     }
 
-    // Modal já aberto e estamos em downloading/ready: atualiza progresso
-    if (modal.style.display === 'flex') {
+    // Modal já aberto e estamos em downloading/ready: atualiza progresso sem reabrir
+    if (isUpdateModalOpen()) {
         renderUpdateModal(state);
         return;
     }
 
-    // Available: só mostra se NÃO foi dispensado recentemente (TTL 1h).
-    // Se expirou, isDismissed limpa e retorna false — modal reabre.
+    // Available: só mostra se NÃO foi dispensado recentemente (TTL 1h)
     if (status === 'available' && isDismissed(v)) return;
 
     renderUpdateModal(state);
-    modal.style.display = 'flex';
+    openUpdateModal();
 }
 
 function renderUpdateModal(state) {
@@ -1290,15 +1315,23 @@ function renderUpdateModal(state) {
 }
 
 function dismissUpdateModal() {
-    const modal = document.getElementById('updateModal');
-    if (modal) modal.style.display = 'none';
-    // Marca como dispensado na sessão atual — não reaparece até reload ou nova versão
+    closeUpdateModal();
+    // Sair do modo teste se estava aberto via shift+click
+    testModeActive = false;
+    // Marca como dispensado na sessão atual — TTL de 1h evita travar para sempre
     if (lastUpdateState && lastUpdateState.version && lastUpdateState.status === 'available') {
         setDismissedSession(lastUpdateState.version);
     }
 }
 
 async function skipUpdateVersion(version) {
+    // Em modo teste, NÃO persistir a versão fictícia no update-prefs.json
+    if (testModeActive) {
+        showToast('Modo teste', 'Em produção esta versão seria silenciada permanentemente.', 'info');
+        testModeActive = false;
+        closeUpdateModal();
+        return;
+    }
     try {
         await fetch('/api/update/skip', {
             method: 'POST',
@@ -1306,8 +1339,7 @@ async function skipUpdateVersion(version) {
             body: JSON.stringify({ version }),
         });
         showToast('Versão pulada', 'Você não será notificado sobre a versão ' + version + ' novamente.', 'info');
-        const modal = document.getElementById('updateModal');
-        if (modal) modal.style.display = 'none';
+        closeUpdateModal();
         setTimeout(pollUpdateStatus, 400);
     } catch (e) {
         showToast('Erro', 'Falha ao registrar opção.', 'error');
@@ -1328,6 +1360,18 @@ function formatRelativeTime(iso) {
 }
 
 async function updateAction(action, body) {
+    // Em modo teste, todos os botões viram informativos — sem chamar backend
+    if (testModeActive) {
+        const msg = action === 'download'
+            ? 'Em produção, o agent baixaria a versão e reiniciaria automaticamente.'
+            : action === 'install'
+                ? 'Em produção, o agent fecharia e reabriria já atualizado.'
+                : 'Modo teste: nenhuma ação real disparada.';
+        showToast('Modo teste', msg, 'info');
+        testModeActive = false;
+        closeUpdateModal();
+        return;
+    }
     const endpoint = '/api/update/' + action;
     try {
         const res = await fetch(endpoint, {
