@@ -1125,15 +1125,15 @@ function renderUpdateModal(state) {
     if (status === 'available' && v) {
         iconEl.textContent = 'system_update';
         titleEl.textContent = `Nova versão ${v} disponível`;
-        subtitleEl.textContent = `Você está usando ${cur}. Deseja atualizar agora?`;
+        subtitleEl.textContent = `Você está usando ${cur}. Ao confirmar, o agent baixa em background e reinicia automaticamente para aplicar. Impressões pendentes na fila são preservadas.`;
         actionsEl.innerHTML = `
             <button type="button" class="btn-cancel" onclick="dismissUpdateModal()">Lembrar depois</button>
             <button type="button" class="btn-cancel" onclick="skipUpdateVersion('${escapeAttr(v)}')">Não exibir mais este aviso</button>
-            <button type="button" class="btn-confirm" onclick="updateAction('download')">Baixar agora</button>`;
+            <button type="button" class="btn-confirm" onclick="updateAction('download', { autoInstall: true })">Baixar e instalar</button>`;
     } else if (status === 'downloading' && v) {
         iconEl.textContent = 'downloading';
         titleEl.textContent = `Baixando ${v}...`;
-        subtitleEl.textContent = `Você pode continuar usando o agent normalmente. A instalação só acontece quando você decidir.`;
+        subtitleEl.textContent = `Quando o download terminar, o agent será reiniciado automaticamente para aplicar a atualização. Você pode minimizar este modal — o processo continua em background.`;
         progressEl.style.display = '';
         const pct = state.progress || 0;
         progressFillEl.style.width = pct + '%';
@@ -1142,10 +1142,10 @@ function renderUpdateModal(state) {
     } else if (status === 'ready' && v) {
         iconEl.textContent = 'task_alt';
         titleEl.textContent = `Versão ${v} pronta para instalar`;
-        subtitleEl.textContent = `Instalar agora reinicia o agent. Impressões pendentes na fila são preservadas.`;
+        subtitleEl.textContent = `Reiniciando o agent para aplicar a atualização...`;
         actionsEl.innerHTML = `
             <button type="button" class="btn-cancel" onclick="dismissUpdateModal()">Mais tarde</button>
-            <button type="button" class="btn-confirm" onclick="updateAction('install')">Instalar e reiniciar</button>`;
+            <button type="button" class="btn-confirm" onclick="updateAction('install')">Instalar e reiniciar agora</button>`;
     }
 }
 
@@ -1187,13 +1187,24 @@ function formatRelativeTime(iso) {
     return new Date(iso).toLocaleString('pt-BR');
 }
 
-async function updateAction(action) {
+async function updateAction(action, body) {
     const endpoint = '/api/update/' + action;
     try {
-        const res = await fetch(endpoint, { method: 'POST' });
+        const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: body ? { 'Content-Type': 'application/json' } : {},
+            body: body ? JSON.stringify(body) : undefined,
+        });
         const data = await res.json();
         if (data.ok) {
-            if (action === 'download') showToast('Download iniciado', 'Acompanhe o progresso no modal.', 'info');
+            if (action === 'download') {
+                const autoInstall = body && body.autoInstall;
+                showToast(
+                    'Download iniciado',
+                    autoInstall ? 'Instalação acontecerá automaticamente ao terminar.' : 'Acompanhe o progresso no modal.',
+                    'info'
+                );
+            }
             if (action === 'install') showToast('Reiniciando', 'O agent será atualizado agora...', 'success');
             setTimeout(pollUpdateStatus, 400);
         } else {
@@ -1213,8 +1224,22 @@ function escapeAttr(s) {
     return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 }
 
-// Inicia polling do update assim que a página estiver pronta
+// Polling adaptativo: 5s em estado calmo, 1s durante download (progresso vivo).
+let updatePollIntervalMs = 5000;
+let updatePollTimer = null;
+
+function schedulePolling() {
+    if (updatePollTimer) clearTimeout(updatePollTimer);
+    updatePollTimer = setTimeout(async () => {
+        await pollUpdateStatus();
+        const status = lastUpdateState && lastUpdateState.status;
+        // Acelera enquanto baixa para a barra de progresso parecer fluida
+        const next = (status === 'downloading') ? 1000 : 5000;
+        if (next !== updatePollIntervalMs) updatePollIntervalMs = next;
+        schedulePolling();
+    }, updatePollIntervalMs);
+}
+
 document.addEventListener('DOMContentLoaded', () => {
-    pollUpdateStatus();
-    setInterval(pollUpdateStatus, 5000);
+    pollUpdateStatus().then(schedulePolling);
 });

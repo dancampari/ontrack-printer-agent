@@ -53,6 +53,7 @@ let updateState = {
     skippedVersions: readUpdatePrefs().skippedVersions,
     currentVersion: app.getVersion(),
     lastCheckedAt: null,   // ISO timestamp da última checagem concluída (ok ou erro)
+    autoInstallAfterDownload: false, // se true, instala automaticamente ao terminar o download
 };
 
 function pushUpdateStateToAgent() {
@@ -85,22 +86,35 @@ function actionCheckForUpdates() {
         .catch((err) => ({ ok: false, error: err && err.message }));
 }
 
-function actionStartDownload() {
+function actionStartDownload(options = {}) {
     if (!app.isPackaged) return Promise.resolve({ ok: false, error: 'Não disponível em modo dev.' });
     if (!updateState.info) return Promise.resolve({ ok: false, error: 'Nenhuma atualização disponível.' });
-    if (updateState.status === 'downloading') return Promise.resolve({ ok: false, error: 'Download já em andamento.' });
-    if (updateState.status === 'ready') return Promise.resolve({ ok: true, alreadyReady: true });
+    const autoInstall = !!options.autoInstall;
+
+    if (updateState.status === 'downloading') {
+        // Permitir promover um download em andamento para auto-install (caso usuário
+        // tenha clicado primeiro em "só baixar" e depois mudou de ideia).
+        if (autoInstall) updateState.autoInstallAfterDownload = true;
+        return Promise.resolve({ ok: false, error: 'Download já em andamento.' });
+    }
+    if (updateState.status === 'ready') {
+        // Já baixado — se autoInstall, instala direto.
+        if (autoInstall) return Promise.resolve(actionInstallNow());
+        return Promise.resolve({ ok: true, alreadyReady: true });
+    }
 
     updateState.status = 'downloading';
     updateState.downloadProgress = 0;
+    updateState.autoInstallAfterDownload = autoInstall;
     pushUpdateStateToAgent();
     updateTrayMenu();
 
     return autoUpdater.downloadUpdate()
-        .then(() => ({ ok: true }))
+        .then(() => ({ ok: true, autoInstall }))
         .catch((err) => {
             updateState.status = 'error';
             updateState.error = err && err.message;
+            updateState.autoInstallAfterDownload = false;
             pushUpdateStateToAgent();
             updateTrayMenu();
             return { ok: false, error: err && err.message };
@@ -255,12 +269,27 @@ autoUpdater.on('update-downloaded', (info) => {
     updateState.info = info;
     updateState.downloadProgress = 100;
     console.log(`[autoUpdater] versão ${info.version} pronta para aplicar.`);
-    showNotification({
-        title: 'Atualização pronta',
-        body: `${info.version} baixada. Clique em "Instalar agora" no painel quando preferir.`,
-    });
     pushUpdateStateToAgent();
     updateTrayMenu();
+
+    // Se o usuário escolheu "Baixar e instalar", aplica direto sem segundo clique.
+    if (updateState.autoInstallAfterDownload) {
+        updateState.autoInstallAfterDownload = false; // consome a flag para não repetir
+        showNotification({
+            title: 'Instalando atualização',
+            body: `${info.version} pronta. O agent será reiniciado em instantes.`,
+        });
+        // Pequeno delay (1.5s) para o modal mostrar "100% — Pronta" antes do quit
+        setTimeout(() => {
+            const r = actionInstallNow();
+            if (!r.ok) console.warn('[autoUpdater] auto-install falhou:', r.error);
+        }, 1500);
+    } else {
+        showNotification({
+            title: 'Atualização pronta',
+            body: `${info.version} baixada. Clique em "Instalar agora" no painel quando preferir.`,
+        });
+    }
 });
 
 autoUpdater.on('error', (err) => {
@@ -397,7 +426,7 @@ function startAgent() {
                 if (action === 'check') {
                     Promise.resolve(actionCheckForUpdates()).then(respond);
                 } else if (action === 'download') {
-                    Promise.resolve(actionStartDownload()).then(respond);
+                    Promise.resolve(actionStartDownload({ autoInstall: !!msg.autoInstall })).then(respond);
                 } else if (action === 'install') {
                     respond(actionInstallNow());
                 } else if (action === 'skip') {
@@ -701,8 +730,8 @@ function updateTrayMenu() {
             enabled: false,
         });
         updateContextItems.push({
-            label: 'Baixar agora',
-            click: () => { actionStartDownload(); },
+            label: 'Baixar e instalar',
+            click: () => { actionStartDownload({ autoInstall: true }); },
         });
         updateContextItems.push({
             label: 'Pular esta versão',
@@ -710,8 +739,9 @@ function updateTrayMenu() {
         });
         updateContextItems.push({ type: 'separator' });
     } else if (updateState.status === 'downloading' && updateState.info) {
+        const willInstall = updateState.autoInstallAfterDownload ? ' (instala ao terminar)' : '';
         updateContextItems.push({
-            label: `Baixando v${updateState.info.version} (${updateState.downloadProgress}%)`,
+            label: `Baixando v${updateState.info.version} (${updateState.downloadProgress}%)${willInstall}`,
             enabled: false,
         });
         updateContextItems.push({ type: 'separator' });

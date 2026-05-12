@@ -144,12 +144,12 @@ test('REGRESSÃO: fixQueue tem try/catch ao redor de operações de spooler', ()
 
 test('REGRESSÃO: package.json está em 3.7.2', () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
-    assert.equal(pkg.version, '3.7.5');
+    assert.equal(pkg.version, '3.7.6');
 });
 
 test('REGRESSÃO: controllers.js reporta version 3.7.2 em /api/health', () => {
     const src = root('api/controllers.js');
-    assert.match(src, /version:\s*['"]3\.7\.5['"]/);
+    assert.match(src, /version:\s*['"]3\.7\.6['"]/);
 });
 
 // ── UX profissional de update (v3.7.2+) ──────────────────────────────────────
@@ -241,17 +241,57 @@ test('UPDATE-UX: dashboard.js usa modal (não banner) e respeita dispensa', () =
     assert.doesNotMatch(src, /updateBanner/);
 });
 
-test('UPDATE-UX: modal tem 3 ações para "available" (lembrar/não exibir/baixar)', () => {
+test('UPDATE-UX: modal tem 3 ações para "available" (lembrar/não exibir/baixar e instalar)', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'dashboard.js'), 'utf8');
     assert.match(src, /Lembrar depois/);
     assert.match(src, /Não exibir mais este aviso/);
-    assert.match(src, /Baixar agora/);
+    assert.match(src, /Baixar e instalar/, 'botão deve ser "Baixar e instalar" (auto-install)');
+    // E DEVE passar autoInstall: true no body do POST
+    assert.match(src, /updateAction\(['"]download['"],\s*\{\s*autoInstall:\s*true\s*\}\)/);
+});
+
+test('AUTO-INSTALL: main.js actionStartDownload aceita { autoInstall }', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+    assert.match(src, /function actionStartDownload\(options\s*=\s*\{\}\)/);
+    assert.match(src, /autoInstallAfterDownload\s*=\s*autoInstall/);
+});
+
+test('AUTO-INSTALL: update-downloaded dispara actionInstallNow quando flag setada', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+    // Pega do início do listener até o próximo `autoUpdater.on(` ou fim
+    const listener = src.match(/autoUpdater\.on\(['"]update-downloaded['"][\s\S]*?(?=autoUpdater\.on\(|$)/);
+    assert.ok(listener);
+    assert.match(listener[0], /if\s*\(updateState\.autoInstallAfterDownload\)/);
+    assert.match(listener[0], /actionInstallNow\(\)/);
+});
+
+test('AUTO-INSTALL: tray menu mostra "Baixar e instalar" (não mais "Baixar agora")', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+    // Procura no bloco do tray (available)
+    const trayAvail = src.match(/status === ['"]available['"][\s\S]*?separator/);
+    assert.ok(trayAvail);
+    assert.match(trayAvail[0], /Baixar e instalar/);
+    assert.doesNotMatch(trayAvail[0], /label:\s*['"]Baixar agora['"]/);
+});
+
+test('AUTO-INSTALL: controllers.js updateDownload aceita { autoInstall } no body', () => {
+    const src = root('api/controllers.js');
+    const fnMatch = src.match(/updateDownload:\s*async[\s\S]*?(?=\n    \/\/|\n\s*updateInstall:)/);
+    assert.ok(fnMatch);
+    assert.match(fnMatch[0], /req\.body\.autoInstall/);
+    assert.match(fnMatch[0], /\{\s*autoInstall\s*\}/);
+});
+
+test('AUTO-INSTALL: dashboard.js usa polling adaptativo (1s durante download)', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'dashboard.js'), 'utf8');
+    assert.match(src, /schedulePolling/);
+    assert.match(src, /status\s*===\s*['"]downloading['"]\s*\)\s*\?\s*1000\s*:\s*5000/);
 });
 
 test('UPDATE-UX: tray menu mostra opções baseadas em status (available/downloading/ready)', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
     assert.match(src, /Atualização disponível: v/);
-    assert.match(src, /Baixar agora/);
+    assert.match(src, /Baixar e instalar/);  // v3.7.6+ unifica download+install
     assert.match(src, /Pular esta versão/);
     assert.match(src, /Instalar e reiniciar/);
 });

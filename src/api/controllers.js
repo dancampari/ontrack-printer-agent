@@ -132,7 +132,7 @@ const Controllers = {
     health: (req, res) => {
         res.json({
             status: 'ok',
-            version: '3.7.5',
+            version: '3.7.6',
             authenticated: state.isAuthenticated(),
             printerConfigured: !!(state.currentConfig.printerName || state.currentConfig.printerIdentifier),
             defaultPrinter: state.currentConfig.printerName || state.currentConfig.printerIdentifier || null,
@@ -292,13 +292,15 @@ const Controllers = {
     },
 
     // POST /api/update/download — usuário consentiu em baixar.
+    // Body opcional: { autoInstall: true } → ao terminar o download, instala
+    // automaticamente sem precisar de segundo clique do usuário.
     updateDownload: async (req, res) => {
         try {
             if (typeof global.requestUpdateAction !== 'function') {
                 return res.status(503).json({ ok: false, error: 'Agent não pronto.' });
             }
-            // Não esperamos o download completo (pode demorar) — só confirmamos início.
-            const r = await global.requestUpdateAction('download', {}, 10_000);
+            const autoInstall = !!(req.body && req.body.autoInstall);
+            const r = await global.requestUpdateAction('download', { autoInstall }, 10_000);
             res.json(r);
         } catch (e) {
             res.status(500).json({ ok: false, error: e.message });
@@ -500,7 +502,7 @@ p { margin: 2px 0; }
 <div class="line"></div>
 <p class="center">Assinatura: ___________________</p>
 <p class="center" style="margin-top:6px; font-size:10px;">Impresso em: ${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()} ${pad(now.getHours())}:${pad(now.getMinutes())}</p>
-<p class="center" style="margin-top:4px; font-size:9px; color:#666;">OnTrack — Agente de Impressão v3.7.5</p>
+<p class="center" style="margin-top:4px; font-size:9px; color:#666;">OnTrack — Agente de Impressão v3.7.6</p>
 </body></html>`;
 
         const fs = require('fs');

@@ -105,7 +105,7 @@ global.requestHtmlPrint = requestHtmlPrint;
 
 async function bootstrap() {
     logger.init();
-    logger.info('MAIN', '=== ONTRACK AGENT v3.7.5 (Fix ícones vermelhos no tray) ===');
+    logger.info('MAIN', '=== ONTRACK AGENT v3.7.6 (Baixar e instalar em 1 clique) ===');
 
     // 1. Inicializa Autenticação (Tenta carregar sessão do disco)
     const isAuthenticated = await auth.init();
