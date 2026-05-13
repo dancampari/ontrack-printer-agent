@@ -6,14 +6,23 @@ const auth = require('./auth');
  * Socket — Realtime + polling adaptativo.
  *
  * Antes: polling rodava a cada 15s SEMPRE, mesmo com Realtime SUBSCRIBED.
- * Agora:
- *  - Quando SUBSCRIBED: watchdog leve a cada 60s (sem query de jobs).
+ * Antes (v3.9.5 e anteriores): watchdog SUBSCRIBED só verificava status, NÃO
+ * drenava pending. Problema: quando o canal do Supabase ficava "stuck
+ * SUBSCRIBED" (mostra conectado mas não entrega eventos — comum em redes
+ * flaky / wake-from-sleep / NAT rebind), jobs vindos de mobile/outro client
+ * sentavam até o heartbeat do client Supabase derrubar o canal (30-60s).
+ *
+ * Agora (v3.9.6+):
+ *  - Quando SUBSCRIBED: watchdog a cada 20s, verifica status E drena pending
+ *    como rede de segurança. Cobre o "stuck SUBSCRIBED" do Realtime.
+ *    Custo: 1 SELECT a cada 20s por agent (negligenciável).
  *  - Quando NÃO SUBSCRIBED: polling de 15s reconecta e busca jobs pendentes.
- *  - Realtime cobre o caminho feliz; polling existe só como fallback de saúde.
+ *  - Realtime continua sendo o caminho rápido (push instantâneo); o drain
+ *    do watchdog é só safety net pra latência máxima ficar ~20s no pior caso.
  */
 
 const RECONNECT_POLL_MS = 15_000;
-const WATCHDOG_MS = 60_000;
+const WATCHDOG_MS = 20_000;
 
 class Socket {
     constructor() {
@@ -102,11 +111,17 @@ class Socket {
             if (!state.isAuthenticated()) return;
 
             if (kind === 'watchdog') {
-                // Caminho feliz: Realtime ativo. Só verifica se ainda está SUBSCRIBED.
+                // Caminho feliz: Realtime ativo. Verifica status...
                 if (state.connStatus !== 'SUBSCRIBED') {
                     logger.warn('WATCHDOG', `Status caiu para ${state.connStatus}. Reconectando...`);
-                    this.connect(); // já recria timer
+                    this.connect(); // já recria timer, e drena ao reconectar
+                    return;
                 }
+                // ...E drena pending como safety net contra "stuck SUBSCRIBED"
+                // (Realtime mostra conectado mas não entrega eventos). Sem isso,
+                // jobs inseridos por outros clientes (ex.: mobile na nuvem) podiam
+                // sentar até o cliente Supabase derrubar o canal (30-60s).
+                await this._drainPending().catch((e) => logger.error('SOCKET', 'erro no drain watchdog', e.message));
                 return;
             }
 

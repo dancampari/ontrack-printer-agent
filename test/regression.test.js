@@ -54,12 +54,25 @@ test('REGRESSÃO: pshost.js tem handshake READY antes de aceitar comandos', () =
     assert.match(src, /if\s*\(!this\.ready\)\s*await\s+this\.waitReady\(\)/, 'run() deve esperar READY');
 });
 
-test('REGRESSÃO: socket.js tem polling adaptativo (não polling de jobs quando SUBSCRIBED)', () => {
+test('REGRESSÃO: socket.js tem polling adaptativo (watchdog + reconnect)', () => {
     const src = root('core/socket.js');
     assert.match(src, /watchdog/i, 'deve ter modo watchdog');
     assert.match(src, /WATCHDOG_MS/, 'deve ter constante de intervalo watchdog');
-    // Quando SUBSCRIBED, NÃO deve buscar jobs (só verificar status)
     assert.match(src, /kind === ['"]watchdog['"]/, 'deve diferenciar modos');
+});
+
+test('SAFETY NET (v3.9.6+): watchdog SUBSCRIBED tambem drena pending jobs', () => {
+    // Bug histórico: quando o Realtime do Supabase ficava "stuck SUBSCRIBED"
+    // (status conectado mas sem entregar eventos — comum em redes flaky), os
+    // jobs vindos de outros clientes (ex.: mobile na nuvem) sentavam até o
+    // heartbeat do client derrubar o canal (30-60s). Mobile users observavam
+    // ~60s de espera entre clicar "imprimir" e a impressora cuspir.
+    // Fix: watchdog SUBSCRIBED também roda _drainPending a cada tick.
+    const src = root('core/socket.js');
+    // Match até a próxima sentinela `// kind === 'reconnect'` que separa os modos
+    const watchdogBlock = src.match(/if \(kind === ['"]watchdog['"]\)[\s\S]*?\/\/ kind === ['"]reconnect/);
+    assert.ok(watchdogBlock, 'bloco do watchdog precisa ser localizável');
+    assert.match(watchdogBlock[0], /_drainPending/, 'watchdog DEVE chamar _drainPending como safety net');
 });
 
 test('REGRESSÃO: agent.js carrega preamble do PSHost no boot', () => {
@@ -142,14 +155,14 @@ test('REGRESSÃO: fixQueue tem try/catch ao redor de operações de spooler', ()
     assert.ok(tryBlocks >= 3, `fixQueue deve ter ≥3 blocos try (achei ${tryBlocks})`);
 });
 
-test('REGRESSÃO: package.json está em 3.9.5', () => {
+test('REGRESSÃO: package.json está em 3.9.6', () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
-    assert.equal(pkg.version, '3.9.5');
+    assert.equal(pkg.version, '3.9.6');
 });
 
-test('REGRESSÃO: controllers.js reporta version 3.9.5 em /api/health', () => {
+test('REGRESSÃO: controllers.js reporta version 3.9.6 em /api/health', () => {
     const src = root('api/controllers.js');
-    assert.match(src, /version:\s*['"]3\.9\.5['"]/);
+    assert.match(src, /version:\s*['"]3\.9\.6['"]/);
 });
 
 // ── UX profissional de update (v3.7.2+) ──────────────────────────────────────

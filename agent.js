@@ -105,7 +105,7 @@ global.requestHtmlPrint = requestHtmlPrint;
 
 async function bootstrap() {
     logger.init();
-    logger.info('MAIN', '=== ONTRACK AGENT v3.9.5 (Modal: tipografia compacta + hierarquia visual CTA/ghost/link) ===');
+    logger.info('MAIN', '=== ONTRACK AGENT v3.9.6 (Watchdog drena pending jobs — fixa latência ~60s em Realtime stuck) ===');
 
     // 1. Inicializa Autenticação (Tenta carregar sessão do disco)
     const isAuthenticated = await auth.init();
