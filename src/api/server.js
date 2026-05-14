@@ -25,9 +25,15 @@ const AGENT_VERSION = pkg.version;
  * chegar em 127.0.0.1 mesmo sem passar pelo CORS do browser.
  */
 function requireAgentToken(req, res, next) {
-    // SOFT MODE: token ainda não provisionado nesta instância — passa adiante.
-    // (após DB migration + habilitação do sync no login, getToken() devolve
-    // o token cacheado e a validação passa a ser estrita.)
+    // v3.9.8: enforcement strict.
+    //
+    // Compat: enquanto o agent não terminou o primeiro sync de token, o
+    // getToken() é null → middleware passa em modo soft. Isso evita janela de
+    // 401 nos primeiros segundos pós-boot/login. Assim que o token é gerado e
+    // sincronizado no DB, a validação fica estrita.
+    //
+    // Frontend lê o token de printer_settings.agent_token (RLS company-scoped)
+    // e envia em X-Agent-Token. Sem token válido → 401.
     if (!agentToken.getToken()) {
         return next();
     }
