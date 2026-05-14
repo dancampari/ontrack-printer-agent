@@ -1,5 +1,6 @@
 const state = require('../config/state');
 const auth = require('../core/auth');
+const agentToken = require('../core/agentToken');
 const database = require('../core/database');
 const printerUSB = require('../services/printerUSB');
 const printerPDF = require('../services/printerPDF');
@@ -8,6 +9,7 @@ const logger = require('../utils/logger');
 const pshost = require('../core/pshost');
 const wsBroadcast = require('../core/wsBroadcast');
 const { safePrinterName } = require('../utils/printerValidator');
+const pkg = require('../../package.json');
 
 // Cache leve para /api/printers — evita PowerShell em cada poll do frontend.
 const PRINTERS_CACHE_TTL_MS = 30_000;
@@ -50,6 +52,14 @@ const Controllers = {
                     const monitor = require('../services/monitor');
                     monitor.start();
                 }
+                // SECURITY (v3.9.7): publica o agent_token p/ o frontend autenticado
+                // pegar via printer_settings e mandar em X-Agent-Token.
+                try {
+                    const token = await agentToken.ensureToken();
+                    await database.syncAgentToken(token);
+                } catch (e) {
+                    logger.warn('AUTH', 'Falha ao sincronizar agent_token (login):', e.message);
+                }
                 res.json({ ok: true, companyId: state.companyId });
             } else {
                 res.status(401).json({ ok: false, error: 'Credenciais inválidas ou usuário sem empresa.' });
@@ -59,19 +69,12 @@ const Controllers = {
         }
     },
 
-    // Rota: GET /api/saved-credentials
-    getSavedCredentials: async (req, res) => {
-        try {
-            const creds = await auth.loadCredentials();
-            if (creds) {
-                res.json({ ok: true, email: creds.email, password: creds.password });
-            } else {
-                res.json({ ok: false });
-            }
-        } catch (e) {
-            res.status(500).json({ ok: false, error: e.message });
-        }
-    },
+    // REMOVIDO em v3.9.7 (security audit): expunha senha em cleartext via HTTP
+    // local. Qualquer processo na máquina conseguia fazer GET no endpoint e
+    // capturar email+senha. Auto-login agora usa exclusivamente o session.secure
+    // criptografado via safeStorage/DPAPI (tryAutoLogin abaixo).
+    //
+    // getSavedCredentials: <removed — DO NOT REINTRODUCE>,
 
     // Rota: POST /api/auto-login (Silent Auto-Login)
     tryAutoLogin: async (req, res) => {
@@ -104,6 +107,13 @@ const Controllers = {
                     const monitor = require('../services/monitor');
                     monitor.start();
                 }
+                // SECURITY (v3.9.7): mesma sync de token no path de auto-login.
+                try {
+                    const token = await agentToken.ensureToken();
+                    await database.syncAgentToken(token);
+                } catch (e) {
+                    logger.warn('AUTH', 'Falha ao sincronizar agent_token (auto-login):', e.message);
+                }
                 logger.info('AUTH', 'Auto-login bem-sucedido.');
                 res.json({ ok: true, companyId: state.companyId });
             } else {
@@ -132,7 +142,7 @@ const Controllers = {
     health: (req, res) => {
         res.json({
             status: 'ok',
-            version: '3.9.6',
+            version: pkg.version,
             authenticated: state.isAuthenticated(),
             printerConfigured: !!(state.currentConfig.printerName || state.currentConfig.printerIdentifier),
             defaultPrinter: state.currentConfig.printerName || state.currentConfig.printerIdentifier || null,

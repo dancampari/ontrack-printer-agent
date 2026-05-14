@@ -155,14 +155,16 @@ test('REGRESSÃO: fixQueue tem try/catch ao redor de operações de spooler', ()
     assert.ok(tryBlocks >= 3, `fixQueue deve ter ≥3 blocos try (achei ${tryBlocks})`);
 });
 
-test('REGRESSÃO: package.json está em 3.9.6', () => {
+test('REGRESSÃO: package.json tem version semver válida', () => {
     const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
-    assert.equal(pkg.version, '3.9.6');
+    assert.match(pkg.version, /^\d+\.\d+\.\d+$/, 'pkg.version deve estar em formato X.Y.Z');
 });
 
-test('REGRESSÃO: controllers.js reporta version 3.9.6 em /api/health', () => {
+test('REGRESSÃO: controllers.js reporta version dinâmica (pkg.version) em /api/health', () => {
     const src = root('api/controllers.js');
-    assert.match(src, /version:\s*['"]3\.9\.6['"]/);
+    // Em vez de string literal hardcoded, controllers usa `version: pkg.version`
+    // — qualquer bump no package.json reflete automaticamente.
+    assert.match(src, /version:\s*pkg\.version/, 'health deveria reportar pkg.version');
 });
 
 // ── UX profissional de update (v3.7.2+) ──────────────────────────────────────
@@ -635,9 +637,11 @@ test('BATCH: controller localPrintBatch existe e usa global.enqueueLocalJob', ()
     assert.match(src, /source:\s*['"]local-batch['"]/);
 });
 
-test('BATCH: server.js registra rota POST /api/local-print-batch', () => {
+test('BATCH: server.js registra rota POST /api/local-print-batch (com middleware token v3.9.7+)', () => {
     const src = root('api/server.js');
-    assert.match(src, /app\.post\(['"]\/api\/local-print-batch['"],\s*Controllers\.localPrintBatch\)/);
+    // v3.9.7: rotas de impressão local agora passam por requireAgentToken middleware.
+    // Aceitamos o middleware entre o path e o controller.
+    assert.match(src, /app\.post\(\s*['"]\/api\/local-print-batch['"][\s\S]{0,200}Controllers\.localPrintBatch\)/);
 });
 
 // ── Stats centralizadas (v3.6.0+) ────────────────────────────────────────────
@@ -802,7 +806,8 @@ test('FLUXO RÁPIDO: /api/local-print existe e aceita HTML direto', () => {
     const ctrl = root('api/controllers.js');
     const srv = root('api/server.js');
     assert.match(ctrl, /localPrint:\s*async/, 'controller localPrint precisa existir');
-    assert.match(srv, /app\.post\(['"]\/api\/local-print['"],\s*Controllers\.localPrint\)/, 'rota POST /api/local-print precisa estar registrada');
+    // v3.9.7: rota agora passa por requireAgentToken middleware antes do controller.
+    assert.match(srv, /app\.post\(\s*['"]\/api\/local-print['"][\s\S]{0,200}Controllers\.localPrint\)/, 'rota POST /api/local-print precisa estar registrada');
 });
 
 test('FLUXO RÁPIDO: localPrint NÃO usa Supabase Storage/SumatraPDF (caminho rápido)', () => {
