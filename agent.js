@@ -51,6 +51,22 @@ function requestUpdateAction(action, params = {}, timeoutMs = 15_000) {
 }
 global.requestUpdateAction = requestUpdateAction;
 
+// LEAK FIX (Phase 4 / A4): se o parent Electron morrer, todas as promises
+// em updateActionWaiters/pendingPdfRequests ficam órfãs sem rejeitar.
+// Aqui rejeitamos qualquer waiter pendente com mensagem clara, limpando timers.
+process.on('disconnect', () => {
+    for (const [id, waiter] of updateActionWaiters.entries()) {
+        try { clearTimeout(waiter.timer); } catch { /* noop */ }
+        try { waiter.reject(new Error('IPC desconectado (parent Electron encerrou).')); } catch { /* noop */ }
+        updateActionWaiters.delete(id);
+    }
+    for (const [id, waiter] of pendingPdfRequests.entries()) {
+        try { clearTimeout(waiter.timer); } catch { /* noop */ }
+        try { waiter.reject(new Error('IPC desconectado (parent Electron encerrou).')); } catch { /* noop */ }
+        pendingPdfRequests.delete(id);
+    }
+});
+
 // Mapa de promises pendentes para geração de PDF via IPC
 const pendingPdfRequests = new Map();
 
@@ -272,8 +288,13 @@ async function bootstrap() {
     }
 
     // Heartbeat 60s (frontend tolera 2min) — metade das writes no banco.
-    setInterval(() => database.sendHeartbeat(), 60000);
+    // LEAK FIX (Phase 4 / A9): intervalo armazenado pra cleanup no shutdown
+    // (cobre o caso do processo continuar vivo após uma desconexão IPC).
+    const heartbeatInterval = setInterval(() => database.sendHeartbeat(), 60000);
     if (state.isAuthenticated()) database.sendHeartbeat();
+    process.on('disconnect', () => {
+        try { clearInterval(heartbeatInterval); } catch { /* noop */ }
+    });
 
     // 4. Inicia Servidor Local (UI)
     server.start();

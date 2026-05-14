@@ -537,7 +537,11 @@ function startAgent() {
                 });
             });
 
-            labelWin.webContents.on('did-fail-load', (event, code, desc) => {
+            // LEAK FIX (Phase 4 / A6): once() em vez de on() — a janela é
+            // sempre destruída após uma falha, então o listener nunca dispara
+            // de novo na mesma BrowserWindow. on() acumulava handlers a cada
+            // tentativa de impressão de teste (visível em prints repetidos).
+            labelWin.webContents.once('did-fail-load', (event, code, desc) => {
                 agentProcess.send({ type: 'PRINT_TEST_LABEL_RESULT', id, success: false, error: desc });
                 labelWin.destroy();
             });

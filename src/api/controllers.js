@@ -544,12 +544,24 @@ p { margin: 2px 0; }
                         '-exit-on-print',
                         htmlPath
                     ]);
+                    // LEAK FIX (Phase 4 / A8): kill no timeout pra evitar
+                    // processo zombie consumindo file handle quando SumatraPDF
+                    // trava sem disparar 'close'.
+                    const killTimer = setTimeout(() => {
+                        try { proc.kill('SIGKILL'); } catch { /* noop */ }
+                        try { if (fs.existsSync(htmlPath)) fs.unlinkSync(htmlPath); } catch { /* noop */ }
+                        reject(new Error('SumatraPDF timeout (30s) — processo killed.'));
+                    }, 30_000);
                     proc.on('close', (code) => {
+                        clearTimeout(killTimer);
                         try { if (fs.existsSync(htmlPath)) fs.unlinkSync(htmlPath); } catch (e) { }
                         if (code === 0) resolve();
                         else reject(new Error(`SumatraPDF encerrou com código ${code}`));
                     });
-                    proc.on('error', reject);
+                    proc.on('error', (err) => {
+                        clearTimeout(killTimer);
+                        reject(err);
+                    });
                 });
             }
 
